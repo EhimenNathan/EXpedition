@@ -17,9 +17,11 @@ The fixes:
 
 On five site-disjoint geographic folds, EtGr layer preservation increased exact
 `object_poly` F1 from **0.315012 to 0.429744**.  On the broad local submission
-rehearsal, the combined fixes increased the official score from **0.5599 to
-0.5944**, increased `object_poly` F1 from **0.524 to 0.610**, and reduced the
-runtime from 106 to 88 seconds.
+26-region full-system rehearsal, the combined fixes increased the official
+score from **0.4635 to 0.4973**, increased `object_poly` F1 from **0.245 to
+0.506**, improved `finds_points` F1 from **0.767 to 0.844**, and reduced runtime
+from 310.4 to 250.7 seconds.  An EtGr-rich four-region smoke rehearsal scored
+**0.5944**, with `object_poly` F1 **0.610**.
 
 See [`docs/ETGR_LAYER_FIX_2026-10-26.md`](docs/ETGR_LAYER_FIX_2026-10-26.md)
 for evidence and limitations.

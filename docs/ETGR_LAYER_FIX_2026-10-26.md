@@ -39,6 +39,24 @@ selection chose layer preservation in all five outer folds.  Fold deltas were
 This is a component result.  Its public-score effect depends on the hidden
 class and modality mix, so it must not be presented as a public score forecast.
 
+## Paired full-system rehearsal
+
+Both archives were run on the same 26-region, multi-modal rehearsal with the
+official metric implementation.
+
+| Archive | Score | Features | Runtime | object_poly F1 | finds_points F1 |
+|---|---:|---:|---:|---:|---:|
+| v18b | 0.4635 | 4,300 | 310.4 s | 0.245 | 0.767 |
+| v19b corrected | **0.4973** | **2,723** | **250.7 s** | **0.506** | **0.844** |
+
+The exact paired full-system gain is **+0.0338**.  The corrected run completed
+with a single atomic output write, 2,723 objects, and a 3.7 MB GeoJSON result.
+The changes do not alter polygon construction, so the established vertex limit
+remains unchanged.
+
+On an EtGr-rich four-region smoke rehearsal, the corrected archive scored
+**0.5944**, with `object_poly` F1 **0.610**, and completed in 87.9 seconds.
+
 ## Regression coverage
 
 `Codex Work/test_etgr_layer_dedupe.py` checks all three required behaviors:
