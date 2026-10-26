@@ -1,7 +1,9 @@
 # KOZ-3 inference forensics
 
-This repository contains the deployment fixes and reproducible audits that
-identified a layer-handling error in the KOZ-3 multimodal archaeology pipeline.
+This private continuation repository contains the training, preprocessing,
+inference, evaluation, rehearsal, and experiment code developed for the KOZ-3
+multimodal archaeology competition by Claude and Codex. It excludes datasets,
+labels, model weights, cached predictions, environments, and submission files.
 
 ## Main result
 
@@ -28,12 +30,22 @@ for evidence and limitations.
 
 ## Contents
 
-- `inference/koz3_infer/run.py`: inference orchestration and final dedupe policy.
-- `koz3/dedupe.py`: region-level cross-image duplicate removal.
-- `audits/annotation_multiplicity_audit.py`: annotation multiplicity audit.
-- `audits/geo_etgr_multiplicity_oof.py`: five-fold exact-metric evaluation.
+- `koz3/`: shared data, training, scoring, geometry, and fusion modules.
+- `scripts/`: preparation, OOF, build, validation, and platform rehearsal tools.
+- `inference/`: submission entry point and modality experts.
+- `experiments/codex/`: Codex CPU/GPU probes, Kaggle kernels, and rejected-model audits.
+- `compute_metrics.py`: byte-verified official metric implementation.
+- `configs/deployed_v19.json`: deployed thresholds and expert settings; weights omitted.
+- `references/`: organiser baseline/simple source code, without model weights.
+- `docs/EXPERIMENTS.md`: chronological experiment ledger, including rejected ideas.
+- `docs/CONTINUATION_GUIDE.md`: setup, artifact map, validation gates, and next steps.
 - `tests/test_etgr_layer_dedupe.py`: deployment invariant regression test.
 
 Competition data, model weights, private labels, output archives, and organizer
 assets are intentionally excluded.
+
+Start with the [continuation guide](docs/CONTINUATION_GUIDE.md). Many scripts
+reference the original workspace layout and expect data or cached OOF artifacts
+under `data/`, `work/`, or `kaggle_import/`; those paths are documented rather
+than silently replaced.
 

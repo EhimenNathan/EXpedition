@@ -1,0 +1,33 @@
+numpy
+pandas
+scipy
+scikit-learn
+lightgbm
+torch
+torchvision
+rasterio
+shapely
+geopandas
+pyproj
+opencv-python
+pillow
+timm
+transformers
+segmentation-models-pytorch
+ultralytics
+laspy
+matplotlib
+pyarrow
+boto3
+requests
+safetensors
+einops
+joblib
+scikit-image
+
+# Optional experiment-specific packages:
+# gudhi
+# kymatio
+# faiss-cpu
+# open-clip-torch
+# xformers
