@@ -26,7 +26,8 @@ def dedupe_region(features, dist_m=4.0):
     groups = {}
     for i, f in enumerate(features):
         p = f["properties"]
-        groups.setdefault((p.get("region_name"), p.get("markup_type"), _fam(p["class_name"])), []).append(i)
+        groups.setdefault((p.get("region_name"), p.get("markup_type"),
+                           p.get("source_layer"), _fam(p["class_name"])), []).append(i)
     keep = []
     for _, idx in groups.items():
         idx = sorted(idx, key=lambda i: -features[i]["properties"].get("confidence", 0.0))
