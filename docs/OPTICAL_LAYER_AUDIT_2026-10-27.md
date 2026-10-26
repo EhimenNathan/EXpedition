@@ -21,7 +21,8 @@ The candidate correction:
 2. stores the exact filename in `properties.source_layer`;
 3. includes `source_layer` in the region-dedupe grouping key, preserving the
    existing within-image duplicate removal while preventing cross-image loss;
-4. leaves the single-image execution path unchanged.
+4. applies the same source-layer identity to aerial and orthophoto outputs;
+5. leaves every single-image execution path unchanged.
 
 `scripts/build_optical_layer_gt.py` constructs a layer-aware rehearsal target by
 copying satellite labels into every source image footprint containing their
