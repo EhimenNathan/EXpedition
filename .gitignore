@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pt
+*.pth
+*.onnx
+*.parquet
+*.npz
+*.zip
+data/
+work/
+build/
+
