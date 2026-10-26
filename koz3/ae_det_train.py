@@ -23,6 +23,7 @@ from koz3.tv_det_train import build as build_fcos  # noqa: E402
 CROP = 640
 MOD = os.environ.get("DET_MOD", "Ae")
 ARCH = os.environ.get("DET_ARCH", "fcos")          # fcos | dfine (HF D-FINE-L, no denoising queries — see EXPERIMENTS)
+DET_CLASS = os.environ.get("DET_CLASS")             # optional single-class expert; keep original class id
 DFINE = "ustc-community/dfine-large-coco"
 
 
@@ -95,6 +96,8 @@ def chips():
     out = []
     for c in load_chips(MOD):
         B = np.array([list(b[:4]) + [k] for b, k in zip(c["boxes"], c["classes"])], np.float32).reshape(-1, 5)
+        if DET_CLASS:
+            B = B[B[:, 4] == CLS.index(DET_CLASS)]
         out.append(dict(c, B=B))
     return out
 
@@ -249,13 +252,24 @@ def oof(tag="ae_fcos", folds=(0, 1, 2, 3)):
             t = Affine(*c["transform"]); tr = Transformer.from_crs(c["crs"], 3857, always_xy=True)
             for cl, cx, cy, _, _, s in detect_image(m, image(c)):
                 X, Y = tr.transform(*(t * (cx, cy)))
-                rows.append((c["region"], CLS[cl], s, X, Y, fold))
+                rows.append((c["region"], c["scene"], CLS[cl], s, X, Y, fold))
         print("oof fold", fold, len(rows), flush=True)
-    D = pd.DataFrame(rows, columns=["region", "cls", "score", "x", "y", "fold"])
-    F = fuse([D[["region", "cls", "score", "x", "y"]]], np.ones(1), match_m=4.0)       # overlapping tiles → one object
+    D = pd.DataFrame(rows, columns=["region", "scene", "cls", "score", "x", "y", "fold"])
+    # A physical object repeated on two source images is two reference objects.  Keep
+    # source images isolated while merging overlapping chips from the same image.
+    D["unit"] = D["region"] + "\x1f" + D["scene"]
+    Z = D.rename(columns={"region": "base_region", "unit": "region"})
+    F = fuse([Z[["region", "cls", "score", "x", "y"]]], np.ones(1), match_m=4.0)
+    parts = F.region.str.split("\x1f", n=1, expand=True)
+    F["region"], F["scene"] = parts[0], parts[1]
     F["fold"] = F.region.map(D.groupby("region").fold.first())
     sfx = "_fast" if os.environ.get("DET_FAST") == "1" else ""
-    F.to_parquet(os.path.join(ROOT, f"work/ae/oof_{tag}{sfx}_cands.parquet")); print(len(D), "raw →", len(F), "merged")
+    layer = "_layers" if os.environ.get("DET_KEEP_SCENE") == "1" else ""
+    if not layer:
+        # Backward-compatible region-level file for older studies.
+        F = fuse([F[["region", "cls", "score", "x", "y"]]], np.ones(1), match_m=4.0)
+        F["fold"] = F.region.map(D.groupby("region").fold.first())
+    F.to_parquet(os.path.join(ROOT, f"work/ae/oof_{tag}{sfx}{layer}_cands.parquet")); print(len(D), "raw →", len(F), "merged")
 
 
 if __name__ == "__main__":
