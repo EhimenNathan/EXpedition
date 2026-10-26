@@ -624,3 +624,6 @@ Ideas from ROGII (robust acceptance), DOE GEMS (incomplete labels, asymmetric me
   validation-like region 103 gains only +1 TP for +2 FP. Useful evidence, but too small and too region-dependent.
 * **Unsupervised satellite/Ae point-pattern translation**: nested utility 0.05360 (direct confirmed twins 0.06565).
   No stable transform was recovered for region 103. Rejected.
+* **Ae adaptive per-scene cap** from observable proposal density: fixed pooled F1 0.18269 versus cap-100 0.18144, but geographic nested F1 0.14772; inner choices were unstable. Rejected.
+* **Source-image-aware LiDAR→Ae confirmation** (independent Ae proposal per film image, layer-expanded GT): pooled +0.02455 but geographic nested +0.00494 (0.47099→0.47593), with 90% bootstrap CI crossing zero and the preferred coordinate system changing by fold. Too unstable and too small for public region 789Q; rejected.
+* **Ae raster-metadata scene gate** (raster size, area/GSD, contrast, entropy, gradients, blur plus proposal statistics): exact layer-aware geographic nested F1 0.14709 (232 TP / 3123 FP / 1129 FN), below unconditional cap-100 0.18144. Physical sheet and photometric metadata do not identify useful film scenes robustly; rejected.
