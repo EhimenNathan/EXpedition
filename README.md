@@ -36,6 +36,9 @@ full-system rehearsal, enabling only aerial fortifications and preserving
 satellite source-image layers raised the exact score from **0.4815 to 0.5276**
 and fortification F1 from **0.0217 to 0.651**.  See
 [`docs/AE_FORT_RECOVERY_2026-10-27.md`](docs/AE_FORT_RECOVERY_2026-10-27.md).
+The public v20 result is **0.5018959557**, a smaller but genuine
+**+0.0029970595** gain over v19b.  Public aerial counts reconstructed from the
+reported precision/recall are 7 TP, 122 FP and 68 FN.
 
 ## Contents
 

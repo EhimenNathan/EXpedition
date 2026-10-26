@@ -653,3 +653,9 @@ Ideas from ROGII (robust acceptance), DOE GEMS (incomplete labels, asymmetric me
   fortification F1 improves **0.0217 -> 0.651**.  A nested region gate was
   unstable and is rejected.  Accepted for v20; details in
   `AE_FORT_RECOVERY_2026-10-27.md`.
+* **v20 public result: 0.5018959557** (+0.0029970595 over v19b).  Aerial
+  precision/recall became 0.102941/0.093333, reconstructing to 7 TP / 122 FP /
+  68 FN; every other modality summary remained identical.  The fortification
+  recovery is real, but the 26-region rehearsal substantially overstated its
+  public contribution.  Satellite source-layer preservation was neutral on the
+  public set.  Do not resubmit v20.

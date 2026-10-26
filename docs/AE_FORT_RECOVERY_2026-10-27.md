@@ -71,6 +71,18 @@ public score by itself.
 - `docs/OPTICAL_LAYER_AUDIT_2026-10-27.md`: source-image contract for optical
   modalities.
 
+## Public result
+
+The platform scored v20 at **0.5018959557**, versus v19b at **0.4988988962**:
+a gain of **+0.0029970595**.  All non-aerial modality precision and recall
+figures were unchanged.  Aerial precision was 0.102941 and recall 0.093333,
+which uniquely reconstruct to 7 TP, 122 FP and 68 FN.  The satellite
+source-layer correction was neutral on this public set.
+
+This result validates the recovered detector but also shows that the local
+26-region rehearsal over-represented aerial fortification benefit.  The public
+score is now the best verified score; do not resubmit v20.
+
 The tested archive is intentionally not stored in Git because it contains
 model weights.  Its SHA-256 is
 `9a3afaf1c2ef4979629e033b1732e4e566b343da67dab0c8e4a096e69e3b19c5`.
