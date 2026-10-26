@@ -322,6 +322,11 @@ LiDAR 0.61 / 0.56, satellite 0.38 / 0.54, **Ae 0.045 / 0.093**, Or 0.71 / 0.24, 
 * Satellite kurgan scene gate (frozen ConvNeXt-T IN-22k probe, kurgan-scene AUC 0.798; DINOv2 0.767; both 0.739):
   every gate threshold lowers the score (v12 satellite pipeline 0.3267 → nested 0.3074) — rejected.
 * Geophysics finds: deployed p_base @ 0.25 already best (F1 0.736 pooled; ensemble 0.736, aug 0.70, no-dipole 0.725).
+* 27 Oct, MagGr finds within-map self-normalization: adding percentile ranks to every raw candidate feature looked
+  strong under nominal-region LORO (exact F1 0.7189 → 0.7262) and whole-geography holdout
+  (Sudbishchi / Semibratnee / Gnezdovo pooled 0.5329 → 0.6079; each family non-regressing). Deployment parity passed,
+  but the paired 26-region full-system rehearsal falsified it: finds_points F1 0.844 → 0.800 and final score
+  0.4973 → 0.4929. **Rejected; archive deleted and deployed finds model left unchanged.**
 * Hillfort localisation with DINOv2-B patch tokens (linear probe, other folds): peak inside the hillfort 0.47 vs scene
   centre 0.39; pooled 0.3267 → 0.3328 (peak) / 0.3352 (both points) but nested only 0.3272 (mode flips between folds)
   → not deployed (350 MB ViT for an unstable gain).
