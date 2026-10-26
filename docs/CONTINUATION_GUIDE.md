@@ -101,6 +101,13 @@ invariants are covered by `tests/test_etgr_layer_dedupe.py`:
 - preserve coincident EtGr objects from separate source images;
 - execute a mixed-family geophysics region once, with all its paths merged.
 
+The v20 candidate also enables only the validated aerial fortification FCOS
+path while keeping aerial kurgan emission disabled.  Its source-layer-aware
+geographic and full-system evidence is in
+`AE_FORT_RECOVERY_2026-10-27.md`.  Preserve overlapping fortification and
+damaged-mound outputs: the organiser explicitly confirms that both objects are
+valid when a WWII trench lies on a mound.
+
 ## Where to continue
 
 Read `EXPERIMENTS.md` and `WEAKNESSES.md` before launching a run. They record

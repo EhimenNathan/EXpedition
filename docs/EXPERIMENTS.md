@@ -642,3 +642,14 @@ Ideas from ROGII (robust acceptance), DOE GEMS (incomplete labels, asymmetric me
   geographic folds were essentially random. Whole-scene max aggregation was also uninformative (AUC 0.372).
   Large-context visual gating cannot reliably distinguish cemetery-bearing film from background across geography;
   **rejected before detector rescoring**.
+* **Recovered aerial fortification FCOS path** (27 Oct): v19 disabled the
+  complete Ae expert after its kurgan branch failed, unintentionally suppressing
+  a separate validated fortification detector.  Source-image-layer-aware
+  geographic OOF at the fixed 0.40 threshold gives F1 **0.253898** (114 TP /
+  752 FP / 294 FN).  The difficult fold remains at exactly zero full-system
+  fortification F1 before and after enabling the branch, while the other three
+  folds recover TP.  Exact 26-region all-optical-layer rehearsal improves
+  **0.4815 -> 0.5276** when combined with satellite layer preservation;
+  fortification F1 improves **0.0217 -> 0.651**.  A nested region gate was
+  unstable and is rejected.  Accepted for v20; details in
+  `AE_FORT_RECOVERY_2026-10-27.md`.
