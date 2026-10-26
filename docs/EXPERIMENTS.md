@@ -605,3 +605,22 @@ Ideas from ROGII (robust acceptance), DOE GEMS (incomplete labels, asymmetric me
   within R): high-precision subsets (FCOS t 0.4, R 60, m 30: share 0.48; t 0.3: 0.35) but tiny volume (28–55 of 974
   Ae kurgans) → best pooled +0.0018, honest −0.0062 (6/20 wins, unstable choices) → **rejected**. Lever for the future:
   a dense-object (point-heatmap / counting) film model without detection caps, trained on cemetery sheets.
+
+## 26 Oct: v19b = **0.4988988962** (new public best, +0.0098426426)
+* The organiser-confirmed EtGr layer isolation plus one geophysics pass per region raised geophysics recall
+  0.7030 → 0.7238 at nearly constant precision (0.7580 → 0.7542). LiDAR, satellite, aerial and ortho were unchanged.
+  This validates source-image identity as part of the target-generating process.
+* **Satellite source-image preservation** (five detector members, exact layer-aware OOF): damaged kurgan F1
+  0.39744 → 0.40286, intact 0.30108 → 0.30632; 12 kurgan TP recovered for 15 FP. A cross-scene-supported hedge
+  reached only 0.40238 / 0.30411. The gain is real but too small for a submission by itself.
+* **Ae conservative scene gate**: nested exact damaged-kurgan F1 0.1074; all inner folds selected no gate. Rejected.
+* **Sentinel-2-pretrained Swin-V2-B aerial verifier** over 19,918 scene-aware proposals: held-out AP
+  0.011–0.085; exact nested F1 0.1796 versus cap-100 baseline 0.1814. Rejected. EO pretraining did not resolve
+  historical-film object/background ambiguity.
+* **Satellite→Ae repeated-observation confirmation** on nine geographic OOF regions: requiring a nearby independent
+  Ae proposal in each source image and emitting at the Ae coordinate raised common-region kurgan utility
+  0.04682 → 0.06565. All held-out folds chose satellite threshold 0.20, Ae threshold 0.15, radius 30 m.
+  The absolute effect is +9 damaged and +2 intact TP for +46/+13 FP and is concentrated in 101/183/185;
+  validation-like region 103 gains only +1 TP for +2 FP. Useful evidence, but too small and too region-dependent.
+* **Unsupervised satellite/Ae point-pattern translation**: nested utility 0.05360 (direct confirmed twins 0.06565).
+  No stable transform was recovered for region 103. Rejected.
