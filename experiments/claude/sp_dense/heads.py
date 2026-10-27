@@ -79,7 +79,9 @@ def make_head(cin=128, w=96):
     layers, c = [], cin
     for d in (1, 1, 2, 4, 8):
         layers += [nn.Conv2d(c, w, 3, padding=d, dilation=d), nn.GroupNorm(8, w), nn.GELU()]; c = w
-    return nn.Sequential(*layers, nn.Conv2d(w, NCH, 1))
+    head = nn.Conv2d(w, NCH, 1)
+    nn.init.constant_(head.bias, 0.0); head.bias.data[[0, 2, 3, 4]] = -4.6        # heat / mask priors ≈ 1 % (CenterNet init)
+    return nn.Sequential(*layers, head)
 
 
 def focal(pred, gt, valid):

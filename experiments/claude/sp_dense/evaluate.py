@@ -23,16 +23,22 @@ sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(os.path.abspath(__f
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
 MOD = os.environ.get("KOZ3_MOD", "SpOr")
 D = os.path.join(ROOT, os.environ.get("SP_DENSE_OUT", "work/sp_dense"))
-T_K = (0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5)
-TAUS = (1.1, 0.45, 0.4, 0.35, 0.3)
-T_A = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4)
-T_F = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4)
-G_H = (0.3, 0.5, 0.6, 0.7, 0.8, 0.9)
+T_K = (0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7)
+TAUS = (1.1, 0.4, 0.3)
+FRAME = ((9.0, 0.0), (0.5, 0.35), (0.5, 0.5))   # (relative distance from scene centre, min score beyond it); off first
+KG = (9.0, 0.9, 0.8, 0.7)         # drop kurgans in scenes whose hillfort map max ≥ kg (labelling rule: screenshots made
+                                  # for a settlement carry no kurgan labels; 9 = off)
+T_A = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6)
+T_F = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6)
+G_H = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+
+
+PEAK_K = int(os.environ.get("PEAK_K", 3))           # local-maximum window in grid cells (3 on 8 m tokens, 7 on 2 m maps)
 
 
 def peaks(h, valid, tmin):
     from scipy.ndimage import maximum_filter
-    m = (h == maximum_filter(h, 3, mode="constant")) & valid & (h >= tmin)
+    m = (h == maximum_filter(h, PEAK_K, mode="constant")) & valid & (h >= tmin)
     out = []
     for r, c in np.argwhere(m):
         dr = dc = 0.0
@@ -57,12 +63,14 @@ def decode_scene(p, s, tmin=0.05):
     for fam, ch in (("k", 0), ("arkhitektury", 2), ("fortifikatsii", 3)):
         for r, c, v, ir, ic in peaks(p[ch].astype(np.float32), valid, tmin):
             X, Y = s["T"] * (c + 0.5, r + 0.5)
-            rows.append((fam, v, float(p[1, ir, ic]) if fam == "k" else np.nan, X, Y))
-    g = gaussian_filter(np.where(valid, p[4].astype(np.float32), 0), 1.0)
-    ir, ic = np.unravel_index(int(np.argmax(g)), g.shape)
-    X, Y = s["T"] * (ic + 0.5, ir + 0.5)
-    rows.append(("gorodishcha", float(g.max()), np.nan, X, Y))
-    D = pd.DataFrame(rows, columns=["fam", "score", "share", "x", "y"])
+            drel = max(abs(r + 0.5 - vh / 2) / (vh / 2), abs(c + 0.5 - vw / 2) / (vw / 2))
+            rows.append((fam, v, float(p[1, ir, ic]) if fam == "k" else np.nan, X, Y, drel))
+    if p.shape[0] > 4:                                     # dense-token heads carry a hillfort mask channel
+        g = gaussian_filter(np.where(valid, p[4].astype(np.float32), 0), 1.0)
+        ir, ic = np.unravel_index(int(np.argmax(g)), g.shape)
+        X, Y = s["T"] * (ic + 0.5, ir + 0.5)
+        rows.append(("gorodishcha", float(g.max()), np.nan, X, Y, 0.0))
+    D = pd.DataFrame(rows, columns=["fam", "score", "share", "x", "y", "drel"])
     if len(D):
         D["x"], D["y"] = tr.transform(D.x.values, D.y.values)
     D["region"] = s["region"]; D["tif"] = s["tif"]
@@ -85,10 +93,15 @@ def merge_region(D):
     return pd.DataFrame(out).reset_index(drop=True)
 
 
-def emit(C, t_k, tau, t_a, t_f, g_h):
+def emit(C, t_k, tau, t_a, t_f, g_h, kg=9.0, fk=(9.0, 0.0), fa=(9.0, 0.0)):
     rows = []
+    hf = C[C.fam == "gorodishcha"]; gated = set(hf[hf.score >= kg].tif)
     for r in C.itertuples():
-        if r.fam == "k" and r.score >= t_k:
+        if r.fam == "k" and r.drel > fk[0] and r.score < fk[1]:
+            continue
+        if r.fam == "arkhitektury" and r.drel > fa[0] and r.score < fa[1]:
+            continue
+        if r.fam == "k" and r.score >= t_k and r.tif not in gated:
             prim = K[0] if r.share >= 0.5 else K[1]; other = K[1] if prim == K[0] else K[0]
             rows.append((r.region, prim, r.score, r.x, r.y))
             if min(r.share, 1 - r.share) >= tau:
@@ -132,12 +145,27 @@ def layered_gt(L, scene_files):
 
 
 def candidates(oof_dir):
+    """Decoded candidates; with HF_POINTS=<csv> the hillfort candidate of each scene is the whole-scene DINOv3
+    localiser's out-of-fold point (score = its map max) instead of the dense head's."""
     from heads import load_scene
     parts = []
+    from rasterio.transform import Affine
     for p in sorted(glob.glob(os.path.join(ROOT, oof_dir, "*.npz"))):
-        s = load_scene(os.path.join(D, "scenes", os.path.basename(p)))
-        parts.append(decode_scene(np.load(p)["p"], s))
-    return merge_region(pd.concat(parts, ignore_index=True))
+        z = np.load(p, allow_pickle=True)
+        if "T" in z:                                       # self-describing map (CNN): own grid geometry
+            s = dict(T=Affine(*z["T"]), crs=str(z["crs"]), valid=z["valid"], region=str(z["region"]), tif=str(z["tif"]))
+        else:
+            s = load_scene(os.path.join(D, "scenes", os.path.basename(p)))
+        parts.append(decode_scene(z["p"], s))
+    C = pd.concat(parts, ignore_index=True)
+    hp = os.environ.get("HF_POINTS")
+    if hp:
+        H = pd.read_csv(os.path.join(ROOT, hp))
+        sc = (H.map_max + H.p_scene) / 2 if "p_scene" in H and os.environ.get("HF_SCORE") == "mean" else H.map_max
+        H = pd.DataFrame({"fam": "gorodishcha", "score": sc, "share": np.nan, "x": H.x3857, "y": H.y3857,
+                          "drel": 0.0, "region": H.region, "tif": H.tif})
+        C = pd.concat([C[C.fam != "gorodishcha"], H[H.tif.isin(set(C.tif))]], ignore_index=True)
+    return merge_region(C)
 
 
 def main(oof_dir=None):
@@ -156,15 +184,18 @@ def main(oof_dir=None):
     gt = {f: to_gt_geojson(L[L.region.map(fo) == f]) for f in folds}
     print(f"{len(regions)} regions, {len(C)} candidates; GT per class: {L.class_name.value_counts().to_dict()}", flush=True)
     # per-class counts per fold for each class-specific setting (classes are scored independently)
-    grid = {"k": [(t, tau) for t in T_K for tau in TAUS], "arkhitektury": list(T_A), "fortifikatsii": list(T_F), "gorodishcha": list(G_H)}
+    grid = {"k": [(t, tau, kg, fr) for t in T_K for tau in TAUS for kg in KG for fr in FRAME],
+            "arkhitektury": [(t, fr) for t in T_A for fr in FRAME], "fortifikatsii": list(T_F), "gorodishcha": list(G_H)}
     CNT = {}
     for fam, opts in grid.items():
         for o in opts:
             args = dict(t_k=9, tau=9, t_a=9, t_f=9, g_h=9)
             if fam == "k":
-                args.update(t_k=o[0], tau=o[1])
+                args.update(t_k=o[0], tau=o[1], kg=o[2], fk=o[3])
+            elif fam == "arkhitektury":
+                args.update(t_a=o[0], fa=o[1])
             else:
-                args[{"arkhitektury": "t_a", "fortifikatsii": "t_f", "gorodishcha": "g_h"}[fam]] = o
+                args[{"fortifikatsii": "t_f", "gorodishcha": "g_h"}[fam]] = o
             for f in folds:
                 _, res = score(fc(emit(C[C.fold == f], **args)), gt[f])
                 CNT[(fam, o, f)] = {c: (v["tp"], v["fp"], v["fn"]) for c, v in res.items()}
