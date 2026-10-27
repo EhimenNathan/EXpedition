@@ -34,3 +34,22 @@ regressed: Timerevo 0.5604 → 0.5348 and Zaolshanskaya 0.2532 → 0.1622.
 model.  The public 5,000–10,000 m² zero-recall bin is mostly satellite hillforts and giant ploughed damaged kurgans,
 so it was not evidence that LiDAR tiling lacked receptive field.  Erentuna remains a representation/domain failure,
 not a recoverable inference-scale mismatch.
+
+## Erentuna heatmap anatomy
+
+The exact deployed OOF blend was inspected at all 69 labelled Erentuna
+kurgans. This separates missing objectness from peak displacement and class
+confusion:
+
+- 43 labels are missed and 26 hit;
+- median kurgan heat inside a missed label is 0.047 versus 0.389 for hits;
+- only 1/43 misses has in-label heat above the deployed 0.15 threshold;
+- 56% of misses have a local maximum within 5 m and 70% within 10 m, but that
+  maximum lies outside the labelled polygon;
+- damaged/intact mask probabilities are nearly zero on misses, and the wrong
+  class exceeds the correct class for 51%, indistinguishable from chance.
+
+Erentuna is therefore an objectness/localisation failure. Lower class
+thresholds, a different damaged/intact rule, and class copying cannot recover
+it safely. A future model would need training changes that create robust heat
+on the mound interior while suppressing nearby terrain peaks.
