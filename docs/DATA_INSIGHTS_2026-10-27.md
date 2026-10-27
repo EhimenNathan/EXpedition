@@ -246,3 +246,9 @@ appearance, so the decisive test is `scripts/sp_dinov3_verifier_oof.py` on the d
 well under a minute. Archive: v21 1.36 GB + 0.61 GB ≈ 1.97 GB, inside the 2 GB limit with little margin.
 The LiDAR rescue and the geophysics fusion results are recorded by Codex on `codex/v21-robust` (rescue rejected:
 nested and oracle chose none; EtGr fusion: nested 0.4911 → 0.5513, fixed 20/80 blend 0.5592, paired rehearsal +0.0015).
+
+Visual check (`experiments/claude/sp_dinov3_viz.py`, figures `docs/figures/dinov3_vs_baseline_*.png`): each method's
+top-N held-out candidates (N = labelled kurgans in the scene; green inside a label, red false alarm). 139: blob 1/18
+vs DINOv3 7/18; 096: 0/19 vs 7/19; 142: 4/30 vs 3/30. DINOv3 concentrates its picks in cemetery-like ground; its false
+alarms cluster beside true mounds and along a riverbed (142). Many labelled mounds are never proposed by the blob
+generator, so the probe tests ranking only; the deployed-candidate test is the decisive one.
