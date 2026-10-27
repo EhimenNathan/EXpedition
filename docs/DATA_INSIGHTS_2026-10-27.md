@@ -211,3 +211,12 @@ v3 per-site F1 (sites ≥ 20 kurgans): Erentuna 0.505 (v2 0.580; CNN 0.341), Nor
 Selyane 0.411, Novenkoe 0.215, Vyshegzha-2 0.203, Esbyu 0.569, Timerevo 0.449, Dneprovskaya 0.379, Zaolshanskaya 0.196,
 Shetnevo 0.920, Lesnaya-1/2/3 0.726/0.582/0.487, Muravlevo 0.684, Borovichi 0.129. Openness adds nothing beyond
 symmetry and curvature; LBP texture is the only new family that helps on its own. The fusion test uses all families.
+
+## LiDAR fortifications: label morphology (experiment 3 deprioritised)
+
+264 LiDAR fortification labels in 17 sites, 148 of them at 004 Borovichi-1. They are compact, not linear: median
+minimum-rectangle 19 × 10 m, mean width 5 m, inscribed radius 4.4 m, median solidity 1.0. Stacked 10 m local relief
+around the labels: Borovichi-1 and Teshilovo show a sharp pit with a raised rim (dugouts / foxholes / craters);
+Vyshenskoe and Verkhmarevo are raised (ramparts / bastions); Sudbishchi-1 shows almost no relief. A linear trench
+(Frangi) model does not fit, a pit-with-rim detector would be validated essentially on one site, and the class weight
+is 5 (~0.0004 per object). Not pursued.

@@ -113,6 +113,19 @@ def features(a, inb, res, method):
             s = max(s_m / res, 0.5)
             g = ndi.gaussian_filter(z, s); F += [g, z - g]
             F.append(np.sqrt(np.maximum(ndi.gaussian_filter(z * z, s) - g * g, 0)))
+    # gradient magnitude at 3 scales, structure-tensor coherence (linear vs blob anomalies), LBP texture of lightness
+    z0 = F[0]
+    for s_m in (0.1, 0.3, 1.0):
+        s = max(s_m / res, 0.5)
+        gy = ndi.gaussian_filter(z0, s, order=(1, 0)); gx = ndi.gaussian_filter(z0, s, order=(0, 1))
+        F.append(np.hypot(gx, gy))
+        jxx = ndi.gaussian_filter(gx * gx, 2 * s); jyy = ndi.gaussian_filter(gy * gy, 2 * s); jxy = ndi.gaussian_filter(gx * gy, 2 * s)
+        F.append(np.sqrt((jxx - jyy) ** 2 + 4 * jxy ** 2) / (jxx + jyy + 1e-9))
+    from skimage.feature import local_binary_pattern
+    lb = local_binary_pattern(np.clip(z0 * 1000, -32767, 32767).astype(np.int16), 8, 1, method="uniform")
+    w = max(int(0.3 / res), 1) * 2 + 1
+    for code in (0, 4, 8, 9):                                   # spot, edge, flat and non-uniform shares within ~0.3 m
+        F.append(ndi.uniform_filter((lb == code).astype(np.float32), w))
     m = METHODS.index(method)
     F += [np.full(inb.shape, float(i == m), np.float32) for i in range(len(METHODS))]
     return np.stack(F).astype(np.float32)
