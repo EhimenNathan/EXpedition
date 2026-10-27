@@ -31,7 +31,7 @@ def main(oof_dir, name):
             elif r.fam in ("arkhitektury", "fortifikatsii"):
                 rows.append((r.region, r.fam, float(r.score), r.x, r.y, r.tif))
     D = pd.DataFrame(rows, columns=["region", "cls", "score", "x", "y", "tif"])
-    out = os.path.join(ROOT, f"work/spor/oof_det_{name}_cands.parquet"); os.makedirs(os.path.dirname(out), exist_ok=True)
+    out = os.path.join(ROOT, os.environ.get("MEMBER_DIR", "work/spor"), f"oof_det_{name}_cands.parquet"); os.makedirs(os.path.dirname(out), exist_ok=True)
     D.to_parquet(out); print(out, len(D), D.cls.value_counts().to_dict())
 
 

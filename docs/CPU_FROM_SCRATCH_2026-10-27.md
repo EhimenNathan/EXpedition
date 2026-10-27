@@ -36,3 +36,12 @@ comparable; the CPU hillfort path (F1 0.585) is the component that clearly beats
 Scripts: experiments/claude/sp_dense/ (extract, heads, evaluate), experiments/claude/sp_cnn/ (cache, cache_li, train,
 ensemble), experiments/claude/li_dense/ (extract, hillfort_tokens), experiments/claude/hf_scene_cls.py,
 experiments/claude/sp_hillfort_dinov3_*.py.
+
+## 27 Oct (late)
+* Satellite d4 TTA (exact, verified equivariant): honest 0.326 → **0.339**, identical settings in 4/4 folds.
+* Hillfort localiser, fixed 2 m tiled view: alone 0.436, combined ≤ current; large scenes stay 2/7 → **rejected**
+  (large-scene misses are not a resolution problem). Current 512 + 768 localiser: 0.750 small / 0.286 large scenes.
+* CPU LiDAR CNN at v21/v22 blind sites (kurgan heat ≥ 0.3): Erentuna 0.67 (v21 held-out 0.14–0.30), Novenkoe 0.07,
+  Gnezdovo-Zaolshanskaya 0.25 → complementary at Erentuna-type sites only. Exported as a point member
+  (experiments/claude/outputs/oof_det_cpu_li_cnn_cands.parquet, score ≥ 0.1) for a nested test in v22.
+* v22 public 0.50491 (= v21 + EtGr fusion; only geophysics changed: recall 0.724 → 0.734).
