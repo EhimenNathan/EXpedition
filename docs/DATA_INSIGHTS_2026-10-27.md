@@ -283,3 +283,19 @@ break-even, and because the rule is part of the labelling process it holds on hi
 `scripts/li_hillfort_kurgan_mask_oof.py` drops deployed LiDAR kurgan predictions inside the model's own predicted
 hillfort extent (nested threshold / dilation) and reports the label-mask ceiling. Only 2 training kurgans touch a
 fortification label (both damaged), so the "fortification on a mound → damaged" rule is a minor lever.
+
+## Round of discovery experiments (CPU)
+
+### A. Damaged vs intact from terrain physics — no gain over deployed
+1,290 LiDAR mounds (one candidate per mound) in 41 sites, leave-site-out LightGBM:
+size only AUC 0.564; shape physics (symmetry, fine relief, pit, curvature, multi-scale relief) 0.774 pooled /
+0.776 within mixed sites; adding site-context features lowers it to 0.708 (they learn each site's class mix).
+Damaged mounds are less symmetric (symmetry CV 0.33 vs 0.23) at identical size (median height 0.56 m). The deployed
+damaged/intact classifier already reaches 0.786–0.805, so this is not a new lever.
+
+### B. Spatial pattern of real mounds — no decoding gap
+Nearest-neighbour distance between labelled mounds: LiDAR p1 3.7 m / p5 4.6 m / median 8.1 m; aerial p1 2.3 m /
+median 9.5 m; satellite median 41.5 m (40 % isolated beyond 50 m). The deployed LiDAR peak decoder (`hm.decode`,
+max-pool kernel 11 px at 0.5 m) suppresses within ±2.5 m, below the closest real spacing; a synthetic check confirms
+two mounds 4 m apart both survive while a large mound stays one peak. (A first estimate treated the kernel size as the
+radius and claimed 11 % unreachable mounds; that was wrong and the adaptive-NMS test was withdrawn.)
