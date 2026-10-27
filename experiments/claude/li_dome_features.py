@@ -36,6 +36,9 @@ FAMILIES = {
     "nbr": ["n20", "n50", "nn1", "nn3", "nbr_h"],
     "symcv": ["cv5", "cv10"],
     "pcurv": ["plan_c", "prof_c"],
+    "open": ["svf5", "svf10", "pos5", "pos10", "neg5", "neg10"],
+    "tpi40": ["ms40", "tpi_ratio"],
+    "lbp": ["lbp_ent", "lbp_spot"],
 }
 
 
@@ -121,6 +124,29 @@ def site(reg):
     for c in ("h", "snr", "rad", "l2"):
         x = df[c].values; med = np.median(x); mad = 1.4826 * np.median(np.abs(x - med)) + 1e-9
         df[f"{c}_rk"] = pd.Series(x).rank(pct=True).values; df[f"{c}_z"] = (x - med) / mad
+    # sky-view factor and openness (Zakšek 2011; Yokoyama 2002) at the candidate, 16 directions, 5 and 10 m horizon
+    a16 = np.linspace(0, 2 * np.pi, 16, endpoint=False); z0 = d[py, px]
+    for rm in (5, 10):
+        up = np.full((len(df), 16), -np.pi / 2); dn = np.full((len(df), 16), -np.pi / 2)
+        for k in range(1, int(rm / R) + 1):
+            yy = np.clip((py[:, None] - k * np.sin(a16)).astype(int), 0, d.shape[0] - 1)
+            xx = np.clip((px[:, None] + k * np.cos(a16)).astype(int), 0, d.shape[1] - 1)
+            ang = np.arctan((d[yy, xx] - z0[:, None]) / (k * R))
+            up = np.maximum(up, ang); dn = np.maximum(dn, -ang)
+        df[f"svf{rm}"] = 1 - np.sin(np.clip(up, 0, None)).mean(1)
+        df[f"pos{rm}"] = (np.pi / 2 - up).mean(1); df[f"neg{rm}"] = (np.pi / 2 - dn).mean(1)
+    # 40 m topographic position: a kurgan is high locally but not on a hill
+    df["ms40"] = (d - ndi.gaussian_filter(d, 40 / R))[py, px]
+    df["tpi_ratio"] = df["ms5"] / (np.abs(df["ms40"]) + 0.05)
+    # rotation-invariant uniform LBP texture of the fine relief within 5 m (entropy; share of 'spot' patterns)
+    from skimage.feature import local_binary_pattern
+    lb = local_binary_pattern(np.clip(L2 * 100, -32767, 32767).astype(np.int16), 8, 2, method="uniform").astype(np.int16)
+    w = int(5 / R)
+    ent, spot = [], []
+    for y, x in zip(py, px):
+        h = np.bincount(lb[max(0, y - w):y + w + 1, max(0, x - w):x + w + 1].ravel(), minlength=10).astype(float)
+        h /= max(h.sum(), 1); ent.append(-(h[h > 0] * np.log(h[h > 0])).sum()); spot.append(h[0] + h[8])
+    df["lbp_ent"] = ent; df["lbp_spot"] = spot
     df["x"] = x0 + (df.px + 0.5) * R; df["y"] = y1 - (df.py + 0.5) * R
     strong = df[df.snr >= 3]
     t = cKDTree(strong[["x", "y"]].values) if len(strong) > 3 else None
@@ -201,13 +227,12 @@ def main():
           f"{int((D_.hit >= 0).sum())} inside kurgan labels", flush=True)
     base = FAMILIES["base"]
     _, per0 = ablation(D_, base, "base (as experiment 1)")
-    for fam in ("msrm", "ld", "pit", "curv", "site", "nbr"):
-        ablation(D_, base + FAMILIES[fam], f"base + {fam}")
-    for fam in ("symcv", "pcurv"):
-        ablation(D_, base + FAMILIES[fam], f"base + {fam}")
+    prev = [c for f in ("base", "msrm", "ld", "pit", "curv", "site", "nbr", "symcv", "pcurv") for c in FAMILIES[f]]
+    ablation(D_, prev, "previous best (all families v2)")
+    for fam in ("open", "tpi40", "lbp"):
+        ablation(D_, prev + FAMILIES[fam], f"previous best + {fam}")
     allc = sum(FAMILIES.values(), [])
-    Dall, per1 = ablation(D_, allc, "all families")
-    ablation(D_, allc, "all families + hard negatives", hardneg=True)
+    Dall, per1 = ablation(D_, allc, "all families v3")
     print("\nper-site F1 base → all (sites with ≥ 20 kurgans):")
     for r in sorted(per1):
         if D_[D_.region == r].n_kur.iloc[0] >= 20:
