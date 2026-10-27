@@ -24,9 +24,16 @@ def main(out="work/hf_dinov3/tokens_gsd2.npz", gsd=2.0):
     gsd = float(gsd)
     L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == "SpOr"]
     HF = {r: g.geometry.union_all() for r, g in L[L.class_name == "gorodishcha"].groupby("region")}
-    bb = SP.Backbone(); Tok, Y, POS, SID, GRID, META = [], [], [], [], [], []
+    bb = None; Tok, Y, POS, SID, GRID, META = [], [], [], [], [], []
+    part_dir = os.path.join(ROOT, out[:-4] + "_parts"); os.makedirs(part_dir, exist_ok=True)   # per-scene parts: resumable
     for k, path in enumerate(SP.scenes()):
         region = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        pp = os.path.join(part_dir, f"{k:03d}.npz")
+        if os.path.exists(pp):
+            z = np.load(pp, allow_pickle=True)
+            Tok.append(z["tok"]); Y.append(z["y"]); POS.append(z["pos"]); SID.append(np.full(len(z["y"]), k))
+            GRID.append(tuple(z["grid"])); META.append(tuple(z["meta"])); continue
+        bb = bb or SP.Backbone()
         img, T, crs, (h, w) = SP.read_gsd(path, gsd)
         views = []
         for flip in (False, True):
@@ -43,6 +50,8 @@ def main(out="work/hf_dinov3/tokens_gsd2.npz", gsd=2.0):
         Tok.append(g.reshape(vh * vw, -1).astype(np.float16)); Y.append(y); SID.append(np.full(vh * vw, k)); GRID.append((vh, vw))
         POS.append(np.c_[(cc.ravel() + 0.5) / vw * 2 - 1, (rr.ravel() + 0.5) / vh * 2 - 1, X3, Y3])
         META.append((region, os.path.basename(path), gsd, h, w))
+        np.savez(pp + ".tmp.npz", tok=Tok[-1], y=y, pos=POS[-1], grid=np.array((vh, vw)), meta=np.array(META[-1], dtype=object))
+        os.replace(pp + ".tmp.npz", pp)
         print(f"{k + 1} {region[:24]} grid {vh}x{vw} hillfort tokens {int(y.sum())}", flush=True)
     np.savez(os.path.join(ROOT, out), tok=np.concatenate(Tok), y=np.concatenate(Y), pos=np.concatenate(POS),
              sid=np.concatenate(SID), grid=np.array(GRID), meta=np.array(META, dtype=object))
