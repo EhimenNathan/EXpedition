@@ -25,6 +25,57 @@ def _ae_weights(name="ae_det"):
 
 
 _AE = {}
+_FORT_VERIFIER = None
+
+
+def _fort_verifier_scores(crops):
+    """Score 224 px greyscale crops with the frozen DINOv2-S verifier."""
+    global _FORT_VERIFIER
+    if not crops:
+        return np.empty(0, np.float32)
+    import os
+    import torch
+    from ..models import load_ts, model_dir
+    if _FORT_VERIFIER is None:
+        path = os.path.join(model_dir("ae_fort_verifier"), "model.ts")
+        if not os.path.exists(path):
+            return np.ones(len(crops), np.float32)
+        _FORT_VERIFIER = load_ts(path)
+    mean = torch.tensor([.485, .456, .406], device="cuda")[None, :, None, None]
+    std = torch.tensor([.229, .224, .225], device="cuda")[None, :, None, None]
+    out = []
+    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+        for i in range(0, len(crops), 64):
+            x = torch.from_numpy(np.stack(crops[i:i + 64])).cuda().float()[:, None].repeat(1, 3, 1, 1) / 255
+            out.extend(_FORT_VERIFIER(((x - mean) / std).float()).float().cpu().numpy().tolist())
+    return np.asarray(out, np.float32)
+
+
+def _crop_fused_fortifications(F, chip_views, tr3857, half=112):
+    """Attach each fused candidate to its highest-margin source chip, then crop.
+
+    This is the same ordering and geometry as the geographic OOF verifier:
+    tile detections -> per-image fusion -> best-margin chip -> 224 px crop.
+    """
+    import cv2
+    from rasterio.transform import Affine
+    forts = F[F.cls == "fortifikatsii"]
+    crops, indices = [], []
+    for idx, r in forts.iterrows():
+        X, Y = tr3857.transform(float(r.x), float(r.y))
+        best = None
+        for gray, t in chip_views:
+            px, py = (~t) * (X, Y)
+            h, w = gray.shape
+            margin = min(px, py, w - 1 - px, h - 1 - py)
+            if margin >= half and (best is None or margin > best[0]):
+                best = (margin, gray, int(round(px)), int(round(py)))
+        if best is None:
+            continue
+        _, gray, px, py = best
+        crops.append(gray[py-half:py+half, px-half:px+half])
+        indices.append(idx)
+    return indices, crops
 
 
 def predict_ae_det(region, paths, deadline, c, name="ae_det", res=0.5, markup="ae"):
@@ -47,15 +98,19 @@ def predict_ae_det(region, paths, deadline, c, name="ae_det", res=0.5, markup="a
     rows = []
     for p in paths:
         t0 = time.time(); n0 = len(rows)
+        chip_views = []
         with rasterio.open(str(p)) as src:
             crs = src.crs.to_string() if (src.crs is not None and src.crs.to_epsg()) else utm_crs(region)
             tr = Transformer.from_crs(crs, 3857, always_xy=True)
+            tr3857 = Transformer.from_crs(3857, crs, always_xy=True)
             if sp_io.is_small(src):
                 chips = [sp_io.read_small(src)]
             else:
                 W, H, tg = sp_io.big_grid(src, res)
                 try:
-                    raw = sp_io.read_grid_raw(src, W, H)      # one read, tiles sliced in memory (pixel parity 0.1/255)
+                    # The verifier was trained from independently resampled
+                    # JPEG chips. Use that exact path when it is enabled.
+                    raw = None if c.get("fort_verifier") else sp_io.read_grid_raw(src, W, H)
                 except Exception:
                     raw = None
                 chips = []
@@ -72,11 +127,36 @@ def predict_ae_det(region, paths, deadline, c, name="ae_det", res=0.5, markup="a
             for rgb, valid, t in chips:
                 if time.time() > deadline:
                     break
+                # Training prep stores these exact chips as JPEG quality 92;
+                # round-trip in memory so deployment crops match OOF pixels.
+                import cv2
+                ok, enc = cv2.imencode(".jpg", rgb[:, :, ::-1], [cv2.IMWRITE_JPEG_QUALITY, 92])
+                if ok:
+                    chip_views.append((cv2.imdecode(enc, cv2.IMREAD_GRAYSCALE), t))
                 for m in _AE[name]:
                     for cl, cx, cy, _, _, s in detect_image(m, rgb, fast=c.get("fast", True)):
                         if CLS[cl] in thr and s >= thr[CLS[cl]]:
                             X, Y = tr.transform(*(t * (cx, cy)))
                             rows.append((region.name, CLS[cl], s, X, Y, p.name))
+        # Fuse before visual verification. Filtering overlapping raw tile
+        # detections first caused the rejected v21 rehearsal regression.
+        if len(rows) > n0 and c.get("fort_verifier"):
+            Di = pd.DataFrame(rows[n0:], columns=["region", "cls", "score", "x", "y", "image"])
+            Fi = fuse([Di[["region", "cls", "score", "x", "y"]]], np.ones(1), match_m=4.0)
+            idx, crops = _crop_fused_fortifications(Fi, chip_views, tr3857)
+            vs = _fort_verifier_scores(crops)
+            keep = np.ones(len(Fi), bool)
+            lo = float(c["fort_verifier"].get("score_min", .35))
+            vt = float(c["fort_verifier"].get("verifier_min", .20))
+            fort_idx = set(Fi.index[Fi.cls == "fortifikatsii"])
+            scored = dict(zip(idx, vs))
+            for j in fort_idx:
+                keep[j] = Fi.loc[j, "score"] >= lo and scored.get(j, -1.0) >= vt
+            # Replace this image's raw rows with already-fused, verified rows;
+            # the final per-image fusion below is then idempotent.
+            rows[n0:] = [(region.name, r.cls, r.score, r.x, r.y, p.name)
+                         for j, r in Fi[keep].iterrows()]
+            log(f"{markup} {p.name}: verifier kept {int(keep.sum())}/{len(Fi)} fused detections")
         log(f"{markup} {p.name}: {len(chips)} tiles → {len(rows) - n0} detections {time.time() - t0:.0f}s")
     if not rows:
         return []
