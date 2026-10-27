@@ -42,3 +42,21 @@ Proxy discrimination test (11,207 LoG blob candidates, 171 inside kurgans, leave
 The signal depends on reliable reference detections; confident CNN detections sit between the two references.
 The decisive test is `scripts/sp_shading_oof.py` on the deployed v20 satellite OOF (nested λ, per-fold check,
 leave-largest-site-out k*, bootstrap). Expected effect if it passes: small (+0.002 to +0.008), not a step change.
+
+## 3. EtGr depth-stack consensus — rejected
+
+Training labels: 70–100 % of the objects in one EtGr depth map are labelled again at the same place in the next
+depth, and the metric pools layers, so neighbouring depths looked like free evidence. Tested with an independent
+pixel-LightGBM detector (RGB/Lab, per-image normalised, multi-scale context), leave-one-region-out over the four
+regions with depth maps (214–217, 26 maps, 303 objects), official metric, nested selection
+(`experiments/claude/etgr_depth_stack_oof.py`).
+
+| decoding | pooled F1 (t 0.5) | TP | FP | FN |
+|---|---:|---:|---:|---:|
+| per layer | 0.4753 | 171 | 491 | 132 |
+| + rescoring by adjacent-depth support | 0.4729 | 170 | 492 | 133 |
+| + copying confident neighbour objects into the layer | 0.3811 | 196 | 1059 | 107 |
+
+Nested honest: 0.4658 for both; inner folds chose no consensus in 3/4. The detector is already consistent across
+depths, and an object absent from one layer's labels is usually genuinely absent there (copied objects are ~4 %
+precise). Do not retry; keep strictly per-layer decoding.
