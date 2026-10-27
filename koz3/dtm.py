@@ -45,8 +45,10 @@ def is_ground_only(path, sample=2_000_000, cell=1.0, max_spread=0.6):
     return False
 
 
-def build(path, res=RES):
-    """→ dtm float32 (H,W) (NaN-free), valid bool (H,W), (x0, y_top, res) grid origin in the LAS CRS."""
+def build(path, res=RES, keep=1.0, seed=0):
+    """→ dtm float32 (H,W) (NaN-free), valid bool (H,W), (x0, y_top, res) grid origin in the LAS CRS.
+
+    keep < 1 randomly thins the cloud first (controlled density experiments, docs/PHYSICS_GATES_2026-10-27.md)."""
     import laspy
     mins, maxs, n = _bounds(path)
     while ((maxs[0] - mins[0]) / res) * ((maxs[1] - mins[1]) / res) > MAX_CELLS:
@@ -58,8 +60,11 @@ def build(path, res=RES):
     all_ground = (not use_class) and is_ground_only(path)
     zsum = np.zeros(H * W, np.float64); cnt = np.zeros(H * W, np.int32)
     zmin = np.full(H * W, np.inf, np.float32)
+    rng = np.random.default_rng(seed)
     with laspy.open(path) as r:
         for pts in r.chunk_iterator(5_000_000):
+            if keep < 1.0:
+                pts = pts[rng.random(len(pts)) < keep]
             x, y, z = np.asarray(pts.x), np.asarray(pts.y), np.asarray(pts.z, np.float32)
             if use_class:
                 m = np.asarray(pts.classification) == 2
