@@ -46,7 +46,7 @@ def main(*files):
     import pandas as pd
     from scipy.ndimage import gaussian_filter, zoom
     from koz3.sp_prep import site_folds
-    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == "SpOr"]; fo = site_folds(L)
+    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == os.environ.get("KOZ3_MOD", "SpOr")]; fo = site_folds(L)
     Zs = [dict(np.load(os.path.join(ROOT, f), allow_pickle=True)) for f in files]
     meta = Zs[0]["meta"]; ns = len(meta)
     assert all(len(z["meta"]) == ns and all(a[1] == b[1] for a, b in zip(z["meta"], meta)) for z in Zs), "scene order differs"
@@ -103,7 +103,7 @@ def main(*files):
         rows.append((meta[s][0], meta[s][1], pos[idx][a, 2], pos[idx][a, 3], float(g.max()), pos[idx][:, 2].mean(), pos[idx][:, 3].mean(),
                      bool(has[s]), bool(ref["y"][idx][a]), sf[s]))
     D = pd.DataFrame(rows, columns=["region", "tif", "x3857", "y3857", "map_max", "cx3857", "cy3857", "has_hillfort", "hit", "fold"])
-    D.to_csv(os.path.join(ROOT, "work/hf_dinov3/loc_points_oof.csv"), index=False)
+    D.to_csv(os.path.join(ROOT, os.environ.get("LOC_OUT", "work/hf_dinov3/loc_points_oof.csv")), index=False)
     print(f"saved loc_points_oof.csv ({name} fixed ensemble σ0.5): hit {D[D.has_hillfort].hit.mean():.3f} on {int(D.has_hillfort.sum())} scenes")
 
 

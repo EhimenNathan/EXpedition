@@ -131,12 +131,18 @@ def layered_gt(L, scene_files):
     import geopandas as gpd
     from shapely.geometry import box
     from heads import load_scene
+    from rasterio.transform import Affine
     parts = []
     for p in scene_files:
-        s = load_scene(p); g = L[L.region == s["region"]]
+        z = np.load(p, allow_pickle=True)
+        if "T" in z and "f" not in z:                      # self-describing OOF map: its own grid and valid extent
+            s = dict(T=Affine(*z["T"]), crs=str(z["crs"]), valid=z["valid"], region=str(z["region"]), tif=str(z["tif"]))
+        else:
+            s = load_scene(p)
+        g = L[L.region == s["region"]]
         if not len(g):
             continue
-        gh, gw = s["f"].shape[:2]; vh, vw = s["valid"]
+        vh, vw = s["valid"]
         (x0, y0), (x1, y1) = s["T"] * (0, 0), s["T"] * (vw, vh)
         fp = box(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
         keep = g.to_crs(s["crs"]).geometry.representative_point().map(fp.covers).to_numpy()
@@ -177,8 +183,8 @@ def main(oof_dir=None):
     L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == MOD]; fo = site_folds(L)
     C = candidates(oof_dir)
     regions = sorted(set(C.region)); C["fold"] = C.region.map(fo); folds = sorted(C.fold.unique())
-    LG = layered_gt(L[L.region.isin(regions)], [os.path.join(D, "scenes", os.path.basename(p))
-                                                  for p in sorted(glob.glob(os.path.join(ROOT, oof_dir, "*.npz")))])
+    files = sorted(glob.glob(os.path.join(ROOT, oof_dir, "*.npz")))
+    LG = layered_gt(L[L.region.isin(regions)], [p if "T" in np.load(p) else os.path.join(D, "scenes", os.path.basename(p)) for p in files])
     print(f"layered GT: {len(LG)} objects from {int(L.region.isin(regions).sum())} labels")
     L = LG
     gt = {f: to_gt_geojson(L[L.region.map(fo) == f]) for f in folds}
