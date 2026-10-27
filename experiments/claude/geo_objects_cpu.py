@@ -188,22 +188,24 @@ _P = _GT = None
 
 
 def _job(job):
+    """Counts for one survey method's images in one region under one decoding setting (counts add exactly)."""
     from koz3.score import score
-    st, r = job
-    t_by, amin, mode = st
+    meth, (t, amin, mode), r = job
     feats = []
     for (reg, key), (lay, p, T, crs, res) in _P.items():
-        if reg == r:
-            feats += decode(p, T, crs, res, t_by[lay["method"]], amin, mode)
-    _, res_ = score({"type": "FeatureCollection", "features": feats}, _GT[r], ["object_poly"])
+        if reg == r and lay["method"] == meth:
+            feats += decode(p, T, crs, res, t, amin, mode)
+    gt = [f for f in _GT[r]["features"] if f["properties"]["method"] == meth]
+    _, res_ = score({"type": "FeatureCollection", "features": feats}, {"type": "FeatureCollection", "features": gt}, ["object_poly"])
     v = res_["object_poly"]
     return (v["tp"], v["fp"], v["fn"])
 
 
 def main():
     global _P, _GT
+    import itertools, time
     from multiprocessing import Pool
-    from koz3.nested import nested, weighted, _add_all
+    from koz3.nested import nested, weighted
     probs = stage1()
     regions = sorted({k[0] for k in probs})
     _GT = {}
@@ -211,25 +213,42 @@ def main():
         feats = []
         for (reg, key), (lay, *_rest) in probs.items():
             if reg == r:
-                feats += [{"type": "Feature", "geometry": mapping(g), "properties": {"class_name": "object_poly"}}
+                feats += [{"type": "Feature", "geometry": mapping(g), "properties": {"class_name": "object_poly", "method": lay["method"]}}
                           for g in read_geoms(lay["lab"], "EPSG:3857")]
         _GT[r] = {"type": "FeatureCollection", "features": feats}
     _P = probs
-    ts = (0.3, 0.4, 0.5, 0.6, 0.7)
-    S = [({"EtGr": a, "MagGr": b, "TerFl": c}, am, md) for a in ts for b in ts for c in (0.4, 0.5, 0.6)
-         for am in (0.05, 0.3) for md in ("poly", "patch")]
-    key = lambda s: (tuple(sorted(s[0].items())), s[1], s[2])
-    jobs = [(s, r) for s in S for r in regions]
+    present = {m: sorted({k[0] for k, v in probs.items() if v[0]["method"] == m}) for m in METHODS}
+    grid = {m: [(t, am, md) for t in ((0.3, 0.4, 0.5, 0.6, 0.7) if m != "TerFl" else (0.4, 0.5, 0.6))
+                for am in (0.05, 0.3) for md in ("poly", "patch")] for m in METHODS}
+    jobs = [(m, st, r) for m in METHODS for st in grid[m] for r in present[m]]
+    print(f"scoring {len(jobs)} (method, setting, region) jobs", flush=True)
+    R = {}; t0 = time.time()
     with Pool(NPROC) as pool:
-        res = pool.map(_job, jobs, chunksize=8)
+        for i, (job, v) in enumerate(zip(jobs, pool.imap(_job, jobs, chunksize=2)), 1):
+            R[job] = v
+            if i % 25 == 0 or i == len(jobs):
+                el = time.time() - t0
+                print(f"  progress {i}/{len(jobs)} ({100 * i / len(jobs):.0f}%)  elapsed {el / 60:.1f} min  eta {el / i * (len(jobs) - i) / 60:.1f} min", flush=True)
+    combos = list(itertools.product(*[grid[m] for m in METHODS]))
     C = {}
-    for (s, r), v in zip(jobs, res):
-        C.setdefault(key(s), {})[r] = {"object_poly": v}
+    for cb in combos:
+        C[cb] = {}
+        for r in regions:
+            tp = fp = fn = 0
+            for m, st in zip(METHODS, cb):
+                if r in present[m]:
+                    a, b, c = R[(m, st, r)]; tp += a; fp += b; fn += c
+            C[cb][r] = {"object_poly": (tp, fp, fn)}
     h, ch, o, os_, tot = nested(C)
     tp, fp, fn = tot["object_poly"]
     print(f"\nnested honest object_poly F1 {h:.4f}  TP {tp} FP {fp} FN {fn} (GT {tp + fn})  | oracle {o:.4f} @ {os_}")
+    for m in METHODS:
+        reg = present[m]
+        sub = {st: {r: {"object_poly": R[(m, st, r)]} for r in reg} for st in grid[m]}
+        hm, chm, om, osm, totm = nested(sub)
+        print(f"   {m:6s} {len(reg):2d} regions  nested F1 {hm:.4f}  counts {totm['object_poly']}  oracle {om:.4f} @ {osm}")
     for r in regions:
-        print(f"   {r:28s} chosen {ch[r]}  F1 {weighted(C[ch[r]][r]):.3f}  counts {C[ch[r]][r]['object_poly']}")
+        print(f"   {r:28s} F1 {weighted(C[ch[r]][r]):.3f}  counts {C[ch[r]][r]['object_poly']}")
 
 
 if __name__ == "__main__":
