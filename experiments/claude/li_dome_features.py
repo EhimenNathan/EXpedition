@@ -32,6 +32,8 @@ FAMILIES = {
     "ld": ["ld"], "pit": ["pit"], "curv": ["curv"],
     "site": [f"{c}_{k}" for c in ("h", "snr", "rad", "l2") for k in ("rk", "z")],
     "nbr": ["n20", "n50", "nn1", "nn3", "nbr_h"],
+    "symcv": ["cv5", "cv10"],
+    "pcurv": ["plan_c", "prof_c"],
 }
 
 
@@ -75,7 +77,21 @@ def site(reg):
     L2 = ndi.gaussian_filter(d - ndi.gaussian_filter(d, 2 / R), 0.5)
     ring_max = ndi.maximum_filter(L2, footprint=_ring(1.0, 4.0))
     df["pit"] = ring_max[py, px] - L2[py, px]
-    df["curv"] = ndi.laplace(ndi.gaussian_filter(d, 2 / R))[py, px]
+    ds = ndi.gaussian_filter(d, 2 / R)
+    df["curv"] = ndi.laplace(ds)[py, px]
+    zy, zx = np.gradient(ds, R); zyy, zyx = np.gradient(zy, R); zxy, zxx = np.gradient(zx, R)
+    g2 = zx ** 2 + zy ** 2 + 1e-9
+    prof = -(zxx * zx ** 2 + 2 * zxy * zx * zy + zyy * zy ** 2) / (g2 * np.sqrt(1 + g2) ** 3)   # profile curvature
+    plan = -(zxx * zy ** 2 - 2 * zxy * zx * zy + zyy * zx ** 2) / (g2 ** 1.5)                   # plan curvature
+    win = int(3 / R) * 2 + 1                                                                    # mean within ~3 m
+    df["prof_c"] = ndi.uniform_filter(np.clip(prof, -5, 5), win)[py, px]
+    df["plan_c"] = ndi.uniform_filter(np.clip(plan, -50, 50), win)[py, px]
+    L5 = ndi.gaussian_filter(d - ndi.gaussian_filter(d, 5 / R), 1.0); a16 = np.linspace(0, 2 * np.pi, 16, endpoint=False)
+    for rm, nm in ((5.0, "cv5"), (10.0, "cv10")):                                               # radial symmetry CV
+        yy = np.clip((py[:, None] - rm / R * np.sin(a16)).astype(int), 0, d.shape[0] - 1)
+        xx = np.clip((px[:, None] + rm / R * np.cos(a16)).astype(int), 0, d.shape[1] - 1)
+        drop = L5[py, px][:, None] - L5[yy, xx]
+        df[nm] = drop.std(1) / (np.abs(drop.mean(1)) + 1e-3)
     ang = np.linspace(0, 2 * np.pi, 16, endpoint=False); ld = np.zeros(len(df))
     H, W = d.shape
     for k, (y, x) in enumerate(zip(py, px)):
@@ -103,13 +119,13 @@ def site(reg):
     inz = np.array([zone.contains(Point(a, b)) for a, b in XY])
     df = df[inz].reset_index(drop=True)
     tree = STRtree(kur) if kur else None
-    hit = []
+    hit, depth = [], []
     for a, b in df[["x", "y"]].values:
         p = Point(a, b); j = -1
         if tree is not None:
             j = next((int(q) for q in tree.query(p) if kur[q].contains(p)), -1)
-        hit.append(j)
-    df["hit"] = hit; df["region"] = reg; df["n_kur"] = len(kur)
+        hit.append(j); depth.append(kur[j].boundary.distance(p) if j >= 0 else 0.0)
+    df["hit"] = hit; df["depth"] = depth; df["region"] = reg; df["n_kur"] = len(kur)
     os.makedirs(f"{OUT}/feat", exist_ok=True); df.to_parquet(cache)
     return df
 
@@ -131,23 +147,30 @@ def site_eval(G, t, n_kur):
     return np.array([tp, len(K) - tp, n_kur - tp])
 
 
-def ablation(D_, cols, name):
+def ablation(D_, cols, name, hardneg=False):
     import lightgbm as lgb
     from sklearn.metrics import roc_auc_score
-    D_ = D_.copy(); D_["y_"] = (D_.hit >= 0).astype(int); D_["p"] = 0.0
+    D_ = D_.copy(); D_["p"] = 0.0
+    best = D_[D_.hit >= 0].sort_values("depth", ascending=False).groupby(["region", "hit"]).head(1).index
+    D_["y_"] = 0; D_.loc[best, "y_"] = 1
+    D_["train"] = (D_.hit < 0) | D_.index.isin(best)            # other candidates inside a mound: ambiguous, not trained on
+    if hardneg:
+        D_["train"] &= (D_.y_ == 1) | (D_.snr >= 3)               # negatives: only mound-like look-alikes
     for r in D_.region.unique():
-        tr = D_.region != r
+        tr = (D_.region != r) & D_.train
         m = lgb.LGBMClassifier(n_estimators=400, learning_rate=0.03, num_leaves=15, min_child_samples=40, subsample=0.8,
                                subsample_freq=1, colsample_bytree=0.8, verbose=-1, n_jobs=NPROC).fit(D_.loc[tr, cols], D_.loc[tr, "y_"])
-        D_.loc[~tr, "p"] = m.predict_proba(D_.loc[~tr, cols])[:, 1]
+        te = D_.region == r
+        D_.loc[te, "p"] = m.predict_proba(D_.loc[te, cols])[:, 1]
     nk = D_.groupby("region").n_kur.first(); regs = [r for r in nk.index if nk[r] > 0]
     ts = np.arange(0.1, 0.95, 0.05); tot = np.zeros(3); per = {}
     for r in regs:
         o = [q for q in regs if q != r]
         best = max(ts, key=lambda t: f1(*sum(site_eval(D_[D_.region == q], t, nk[q]) for q in o)))
         c = site_eval(D_[D_.region == r], best, nk[r]); tot += c; per[r] = f1(*c)
-    auc = roc_auc_score(D_.y_, D_.p)
-    print(f"{name:34s} AUC {auc:.3f}  pooled F1 {f1(*tot):.3f}  TP {int(tot[0])} FP {int(tot[1])} FN {int(tot[2])}", flush=True)
+    E = D_[D_.train]; auc = roc_auc_score(E.y_, E.p)
+    sa = [roc_auc_score(g.y_, g.p) for _, g in E.groupby("region") if 0 < g.y_.sum() < len(g)]
+    print(f"{name:34s} AUC pooled {auc:.3f} per-site {np.mean(sa):.3f}  pooled F1 {f1(*tot):.3f}  TP {int(tot[0])} FP {int(tot[1])} FN {int(tot[2])}", flush=True)
     return D_, per
 
 
@@ -163,8 +186,11 @@ def main():
     _, per0 = ablation(D_, base, "base (as experiment 1)")
     for fam in ("msrm", "ld", "pit", "curv", "site", "nbr"):
         ablation(D_, base + FAMILIES[fam], f"base + {fam}")
+    for fam in ("symcv", "pcurv"):
+        ablation(D_, base + FAMILIES[fam], f"base + {fam}")
     allc = sum(FAMILIES.values(), [])
     Dall, per1 = ablation(D_, allc, "all families")
+    ablation(D_, allc, "all families + hard negatives", hardneg=True)
     print("\nper-site F1 base → all (sites with ≥ 20 kurgans):")
     for r in sorted(per1):
         if D_[D_.region == r].n_kur.iloc[0] >= 20:
