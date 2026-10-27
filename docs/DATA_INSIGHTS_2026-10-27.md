@@ -272,3 +272,14 @@ class 1 forces `dtm.build` onto its minimum-height + progressive morphological f
 −0.02 m (99 % of cells within 0.3 m); mound peak relief 0.330 vs 0.328 m (correlation 0.998); background clutter
 0.309 vs 0.311 m; dome candidates covering kurgans 35 vs 33 of 59. A hidden cloud without ground classification is
 processed essentially as well as a classified one; no robustness fix needed.
+
+### Organiser rule: mounds inside settlements are not labelled (and fortifications on mounds → damaged)
+
+Training labels confirm the rule: in 87 regions with hillfort labels, 7 of 974 kurgan labels have their point inside
+a hillfort (all at 021 Novenkoe), while 44 of 146 fortifications do. Physics mound candidates (v3 ranker, held-out
+p ≥ 0.5) inside LiDAR hillforts are real kurgans 1 in 48 (2 %) against 62 in 139 (45 %) outside: hillfort interiors
+are full of mound-like relief that is never labelled. A kurgan prediction inside a hillfort is far below the ≈ 14 %
+break-even, and because the rule is part of the labelling process it holds on hidden data by construction.
+`scripts/li_hillfort_kurgan_mask_oof.py` drops deployed LiDAR kurgan predictions inside the model's own predicted
+hillfort extent (nested threshold / dilation) and reports the label-mask ceiling. Only 2 training kurgans touch a
+fortification label (both damaged), so the "fortification on a mound → damaged" rule is a minor lever.
