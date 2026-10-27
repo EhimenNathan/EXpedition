@@ -21,6 +21,8 @@ import pandas as pd
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
+MOD = os.environ.get("KOZ3_MOD", "SpOr")
+D = os.path.join(ROOT, os.environ.get("SP_DENSE_OUT", "work/sp_dense"))
 T_K = (0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5)
 TAUS = (1.1, 0.45, 0.4, 0.35, 0.3)
 T_A = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4)
@@ -133,20 +135,21 @@ def candidates(oof_dir):
     from heads import load_scene
     parts = []
     for p in sorted(glob.glob(os.path.join(ROOT, oof_dir, "*.npz"))):
-        s = load_scene(os.path.join(ROOT, "work/sp_dense/scenes", os.path.basename(p)))
+        s = load_scene(os.path.join(D, "scenes", os.path.basename(p)))
         parts.append(decode_scene(np.load(p)["p"], s))
     return merge_region(pd.concat(parts, ignore_index=True))
 
 
-def main(oof_dir="work/sp_dense/oof"):
+def main(oof_dir=None):
+    oof_dir = oof_dir or os.path.relpath(os.path.join(D, "oof"), ROOT)
     import geopandas as gpd
     from koz3.labels import to_gt_geojson
     from koz3.score import score, WEIGHTS
     from koz3.sp_prep import site_folds
-    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == "SpOr"]; fo = site_folds(L)
+    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == MOD]; fo = site_folds(L)
     C = candidates(oof_dir)
     regions = sorted(set(C.region)); C["fold"] = C.region.map(fo); folds = sorted(C.fold.unique())
-    LG = layered_gt(L[L.region.isin(regions)], [os.path.join(ROOT, "work/sp_dense/scenes", os.path.basename(p))
+    LG = layered_gt(L[L.region.isin(regions)], [os.path.join(D, "scenes", os.path.basename(p))
                                                   for p in sorted(glob.glob(os.path.join(ROOT, oof_dir, "*.npz")))])
     print(f"layered GT: {len(LG)} objects from {int(L.region.isin(regions).sum())} labels")
     L = LG

@@ -22,6 +22,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."
 sys.path.insert(0, ROOT)
 D = os.path.join(ROOT, os.environ.get("SP_DENSE_OUT", "work/sp_dense"))
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
+MOD = os.environ.get("KOZ3_MOD", "SpOr")
 HEAT = {"k": 0, "arkhitektury": 2, "fortifikatsii": 3}
 NCH = 5
 CROP = 48
@@ -141,7 +142,7 @@ def train_all(iters=2500, seed=0):
     import torch
     from koz3.sp_prep import site_folds
     torch.set_num_threads(os.cpu_count()); torch.manual_seed(seed)
-    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == "SpOr"]
+    L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); L = L[L["mod"] == MOD]
     fo = site_folds(L)
     files = sorted(glob.glob(os.path.join(D, "scenes", "*.npz")))
     S = [load_scene(p) for p in files]
