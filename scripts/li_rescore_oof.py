@@ -75,15 +75,13 @@ def main(oof="work/li/oof_ens.pkl"):
         D = pd.DataFrame(rows); D.to_parquet(cache)
     print(len(D), "kurgan peaks;", int(D.lab.sum()), "best matches of a kurgan label")
     feats = [c for c in D.columns if c not in ("region", "fold", "cls", "x", "y", "conf", "lab")]
-    D["p"] = np.nan
-    for f in sorted(D.fold.unique()):
-        tr_ = D[D.fold != f]
-        m = lgb.LGBMClassifier(n_estimators=400, learning_rate=0.03, num_leaves=15, min_child_samples=40, subsample=0.8,
-                               subsample_freq=1, colsample_bytree=0.8, random_state=0, verbose=-1)
-        m.fit(tr_[feats], tr_.lab)
-        D.loc[D.fold == f, "p"] = m.predict_proba(D.loc[D.fold == f, feats])[:, 1]
+    from rescore_models import oof_predict
+    kinds = os.environ.get("LI_RESCORE_MODELS", "lgbm").split(",")       # e.g. lgbm,catboost,ngboost,avg,catboost+anom
+    for kd in kinds:
+        D["p_" + kd.replace("+", "_")] = oof_predict(D, feats, kd)
+    D["p"] = D["p_" + kinds[0].replace("+", "_")]
     from sklearn.metrics import roc_auc_score
-    print(f"AUC peak heat {roc_auc_score(D.lab, D.peak):.3f}  conf {roc_auc_score(D.lab, D.conf):.3f}  → morphometric GBM {roc_auc_score(D.lab, D.p):.3f}")
+    print(f"AUC peak heat {roc_auc_score(D.lab, D.peak):.3f}  conf {roc_auc_score(D.lab, D.conf):.3f}  → " + " ".join(f"{kd} {roc_auc_score(D.lab, D['p_' + kd.replace('+', '_')]):.3f}" for kd in kinds))
     # nested metric: non-kurgan features from the deployed decode; kurgan peaks re-emitted (deployed dual rule)
     folds = sorted(D.fold.unique())
     gt = {f: to_gt_geojson(L[L.region.isin([r for r in P if items[r]["fold"] == f])]) for f in folds}
@@ -92,7 +90,9 @@ def main(oof="work/li/oof_ens.pkl"):
     deployed = {r: [g for g in decode_site_v2(P[r].astype(np.float32), items[r]["valid"], dict(items[r]["meta"], region=r), thr=0.15, dual=0.05)
                     if g["properties"]["class_name"] in K] for r in P}
     kk = lambda yy: 1 / np.cos(np.radians(np.degrees(2 * np.arctan(np.exp(yy / 6378137.0)) - np.pi / 2)))
-    D["blend"] = np.sqrt(D.peak * D.p)
+    for kd in kinds:
+        D["b_" + kd.replace("+", "_")] = np.sqrt(D.peak * D["p_" + kd.replace("+", "_")])
+    srcs = ("peak",) + tuple(f"{pre}_{kd.replace('+', '_')}" for kd in kinds for pre in ("p", "b"))
 
     def make(s, f):
         src, t = s
@@ -109,9 +109,9 @@ def main(oof="work/li/oof_ens.pkl"):
                 out.append({"type": "Feature", "geometry": Point(X, Y).buffer(kk(Y), 12).__geo_interface__,
                             "properties": {"class_name": c, "confidence": float(getattr(row, src) * pc)}})
         return {"type": "FeatureCollection", "features": out}
-    S = [("deployed", 0)] + [(s_, t) for s_ in ("peak", "p", "blend") for t in (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)]
+    S = [("deployed", 0)] + [(s_, t) for s_ in srcs for t in (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)]
     C = fold_counts(make, S, folds, gt, CLS)
-    for src in ("deployed", "peak", "p", "blend"):
+    for src in ("deployed",) + srcs:
         h, ch, o, os_, tot = nested({k: v for k, v in C.items() if k[0] == src})
         print(f"{src:9s} honest {h:.4f} (oracle {o:.4f} @ {os_[1]}) " + " ".join(f"{c[:8]} {2 * v[0] / max(2 * v[0] + v[2] + 0.5 * v[1], 1):.3f}" for c, v in tot.items() if v[0] + v[2]))
 

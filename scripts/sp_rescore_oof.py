@@ -138,22 +138,22 @@ def main(min_score=0.1):
         F.to_parquet(cache)
     print(len(F), "candidates;", int(F.lab.sum()), "inside a same-class label")
     feats = [c for c in F.columns if c not in ("region", "cls", "x", "y", "fold", "lab", "p")]
-    F["p"] = np.nan
-    for f in folds:
-        tr = F[F.fold != f]
-        m = lgb.LGBMClassifier(n_estimators=400, learning_rate=0.03, num_leaves=15, min_child_samples=40, subsample=0.8,
-                               subsample_freq=1, colsample_bytree=0.8, reg_lambda=1.0, random_state=0, verbose=-1)
-        m.fit(tr[feats], tr.lab)
-        F.loc[F.fold == f, "p"] = m.predict_proba(F.loc[F.fold == f, feats])[:, 1]
+    from rescore_models import oof_predict
+    kinds = os.environ.get("SP_RESCORE_MODELS", "lgbm").split(",")       # e.g. lgbm,catboost,ngboost,avg,catboost+anom
+    for kd in kinds:
+        F["p_" + kd.replace("+", "_")] = oof_predict(F, feats, kd)
+    F["p"] = F["p_" + kinds[0].replace("+", "_")]
     from sklearn.metrics import roc_auc_score
     for c in CLS:
         g = F[F.cls == c]
         if g.lab.nunique() > 1:
-            print(f"  {c:24s} AUC fused {roc_auc_score(g.lab, g.score):.3f} → rescored {roc_auc_score(g.lab, g.p):.3f}  (n={len(g)}, pos={int(g.lab.sum())})")
+            print(f"  {c:24s} AUC fused {roc_auc_score(g.lab, g.score):.3f} → " + " ".join(f"{kd} {roc_auc_score(g.lab, g['p_' + kd.replace('+', '_')]):.3f}" for kd in kinds)
+                  + f"  (n={len(g)}, pos={int(g.lab.sum())})")
     F.to_parquet(os.path.join(ROOT, "work/spor/rescore_oof.parquet"))
     TH = (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6)
-    F["blend"] = np.sqrt(F.score * F.p)
-    srcs = ("score", "p", "blend")
+    for kd in kinds:
+        F["b_" + kd.replace("+", "_")] = np.sqrt(F.score * F["p_" + kd.replace("+", "_")])
+    srcs = ("score",) + tuple(f"{pre}_{kd.replace('+', '_')}" for kd in kinds for pre in ("p", "b"))
 
     def make(st, f):
         src, t = st
@@ -162,7 +162,7 @@ def main(min_score=0.1):
     C = fold_counts(make, [(s_, t) for s_ in srcs for t in TH], folds, gt)
     from ae_det_oof import f1
     from koz3.score import WEIGHTS
-    for allowed in (("score",), ("p",), ("blend",), srcs):          # per class, nested: setting chosen on the other folds
+    for allowed in tuple((s_,) for s_ in srcs):          # per class, nested: setting chosen on the other folds
         tot = {}
         for c in CLS:
             for f in folds:
