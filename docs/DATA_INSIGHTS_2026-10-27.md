@@ -128,3 +128,39 @@ official hit rule (centre inside the label, coverage ≥ 0.5 of the smaller shap
   at σ = 0.5 m → 0.55 at σ = 1 m. Kurgans and hillforts tolerate 1 m (≥ 0.97).
 - The public ≤ 100 m² recall (0.63) equals the LiDAR / geophysics recall that makes up those objects; at the 0.5 m
   working grid the smallest-decile LiDAR kurgan still spans ~10 px. No small-object-specific deficit found.
+
+## Geophysics objects: lightweight CPU detector (`experiments/claude/geo_objects_cpu.py`)
+
+Pixel LightGBM (per-image normalised colour, multi-scale contrast and texture, method one-hot), leave-one-region-out
+over 17 regions / 91 labelled images, per-image decoding, per-method thresholds nested, official metric:
+
+| method | regions | nested F1 | TP / FP / FN |
+|---|---:|---:|---|
+| EtGr | 6 | 0.567 | 382 / 615 / 275 |
+| MagGr | 12 | 0.276 | 120 / 1076 / 92 |
+| TerFl | 2 | 0.234 | 65 / 625 / 112 |
+| all object_poly | 17 | 0.435 | 541 / 1799 / 505 |
+
+Overall it ties the deployed documented OOF (0.4297, different folds). Candidate use: EtGr maps and profiles only,
+if the deployed EtGr-only OOF per region (212–217) is clearly lower. MagGr / TerFl stay with the deployed pipeline.
+Integration needs a numpy rgb2lab (scikit-image may be absent on the platform).
+
+## LiDAR physics-dome rescue (`experiments/claude/li_dome_detector.py`, `li_dome_rank.py`)
+
+Candidates: σ = 5 m local-relief maxima on a 0.5 m DTM with 16-ray radial profiles (half-height radius, monotone
+symmetry), site roughness and clutter density computed label-free. A LightGBM over these physical features, trained
+leave-one-site-out on 13 sites, ranks candidates with AUC 0.877 (raw SNR 0.637); standalone pooled kurgan F1 0.430.
+
+| site | physics ranker F1 (TP/FP/FN) | CNN (EXPERIMENTS.md) |
+|---|---|---|
+| 021 Novenkoe | 0.447 (33/111/26) | recall 0.14–0.19 |
+| 036 Timerevo | 0.486 (154/185/233) | recall 0.41 |
+| 011 Erentuna | 0.225 (56/744/13) | 26/69 found |
+| 190 Muravlevo | 0.788 (81/5/41) | — |
+| 017 Yushkovo | 0.785 (43/45/1) | — |
+| 179/180/181 Lesnaya | 0.73 / 0.59 / 0.62 | recall 0.70–0.84 |
+| 102 Zaolshanskaya | 0.077 | weak |
+
+Not a replacement (CNN blend ≈ 0.57) but independent evidence that is strong exactly where the CNN is weak. Decisive
+test: `scripts/li_dome_fusion_oof.py` adds ranked candidates only where the deployed CNN blend has no kurgan within
+`gap` m, nested over the LiDAR folds with per-fold and per-site robust acceptance.
