@@ -196,3 +196,18 @@ Per-site F1, base → all families (sites with ≥ 20 kurgans): 011 Erentuna 0.0
 Symmetry CV and plan/profile curvature (suggested in review) are the strongest single additions. The ranker is a
 CPU-only, physics-feature model, independent of the CNN, and alone beats the CNN on Erentuna. Decisive next test:
 `scripts/li_dome_fusion_oof.py` (rescue where the deployed CNN is silent; nested over LiDAR folds; robust acceptance).
+
+### Round 3 feature families (review suggestions)
+
+| model | AUC pooled / per site | pooled F1 | TP / FP / FN |
+|---|---|---:|---|
+| previous best (v2) | 0.917 / 0.900 | 0.441 | 876 / 1890 / 1277 |
+| + sky-view factor / openness (5, 10 m) | 0.919 / 0.894 | 0.434 | 868 / 1951 / 1285 |
+| + 40 m TPI and 5/40 m ratio | 0.911 / 0.910 | 0.430 | 847 / 1881 / 1306 |
+| + rotation-invariant LBP texture (5 m) | 0.922 / 0.907 | 0.456 | 911 / 1860 / 1242 |
+| **all families v3** | **0.927 / 0.913** | **0.460** | **910 / 1792 / 1243** |
+
+v3 per-site F1 (sites ≥ 20 kurgans): Erentuna 0.505 (v2 0.580; CNN 0.341), Nora-Vinnon 0.545, Yushkovo 0.916,
+Selyane 0.411, Novenkoe 0.215, Vyshegzha-2 0.203, Esbyu 0.569, Timerevo 0.449, Dneprovskaya 0.379, Zaolshanskaya 0.196,
+Shetnevo 0.920, Lesnaya-1/2/3 0.726/0.582/0.487, Muravlevo 0.684, Borovichi 0.129. Openness adds nothing beyond
+symmetry and curvature; LBP texture is the only new family that helps on its own. The fusion test uses all families.
