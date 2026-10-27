@@ -252,3 +252,23 @@ top-N held-out candidates (N = labelled kurgans in the scene; green inside a lab
 vs DINOv3 7/18; 096: 0/19 vs 7/19; 142: 4/30 vs 3/30. DINOv3 concentrates its picks in cemetery-like ground; its false
 alarms cluster beside true mounds and along a riverbed (142). Many labelled mounds are never proposed by the blob
 generator, so the probe tests ranking only; the deployed-candidate test is the decisive one.
+
+## Data-generation audits
+
+### Label anomalies (7,503 polygon labels, metric-style overlap ≥ 50 % of the smaller shape)
+
+| finding | count | consequence |
+|---|---|---|
+| same mound in both the damaged and intact files | 4 of 5,196 kurgans | labels are effectively exclusive; dual emission is justified by class uncertainty only |
+| exact duplicate polygons in one satellite file | 56 pairs, all in 131 Kurgany-2 (IoU 1.0) | export error (layer written twice); unpredictable in hidden data; report to organisers |
+| fortification inside hillfort (LiDAR) | 32 | legitimate nested objects, both classes emitted |
+| architecture inside hillfort (satellite) | 49 | legitimate nested objects |
+| EtGr objects overlapping across depth layers | 1,314 | the per-layer repetition measured earlier |
+
+### Unclassified point clouds (`experiments/claude/insight_las_unclassified.py`)
+
+021 Novenkoe delivered with 65 % ground (class 2) plus vegetation and buildings; the same cloud with every point set to
+class 1 forces `dtm.build` onto its minimum-height + progressive morphological filter path. Terrain difference median
+−0.02 m (99 % of cells within 0.3 m); mound peak relief 0.330 vs 0.328 m (correlation 0.998); background clutter
+0.309 vs 0.311 m; dome candidates covering kurgans 35 vs 33 of 59. A hidden cloud without ground classification is
+processed essentially as well as a classified one; no robustness fix needed.
