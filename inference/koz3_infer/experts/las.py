@@ -57,6 +57,8 @@ def predict(region, paths, deadline):
         tta = c.get("tta", True)        # "d8": 4 rotations × 2 flips (nested OOF 0.5651 → 0.5695); True: 3 flips
         if tta == "d8" and time.time() > deadline - 300:
             tta = True                     # protect the time budget
+        if time.time() > deadline - 60:
+            tta = False
         ps = [oom_retry(lambda t, m=m, xx=xs[k]: hm.predict_tiled(m, xx, N_HM + N_MK, tile=t, overlap=min(192, t // 4), tta=tta))
               for m, k, _ in models]
         ws = np.array([w for _, _, w in models], np.float32)

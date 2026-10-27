@@ -14,6 +14,9 @@ from .common import log, region_dirs, region_files
 BUDGET_S = float(os.environ.get("KOZ3_BUDGET_S", 26 * 60))   # platform kills at 30 min
 EXPERTS = ["geo", "las", "sp_or", "ae", "or_"]   # value per second: satellite (30 regions) before the few big Ae / Or sheets
 COLLECTED = []
+# Prior cost of one job: overhead_s + s_per_mb × input MB.  Only the ratio between experts matters until the first
+# jobs are measured; scripts/calibrate_budget.py fits them from a rehearsal log (config "budget" overrides these).
+RATES = {"geo": (5.0, 0.5), "las": (20.0, 0.25), "sp_or": (5.0, 0.15), "ae": (10.0, 0.3), "or_": (20.0, 0.05)}
 
 
 def _jobs_for(mod, plan):
@@ -31,6 +34,11 @@ def _jobs_for(mod, plan):
     return [(region, sorted(paths, key=str)) for region, paths in by_region.items()]
 
 
+def _job_cost(name, paths, rates):
+    over, per_mb = rates.get(name, (10.0, 0.2))
+    return over + per_mb * sum(p.stat().st_size for p in paths) / 1e6
+
+
 def run(in_dir, t0):
     deadline = t0 + BUDGET_S
     regions = region_dirs(in_dir)
@@ -42,6 +50,8 @@ def run(in_dir, t0):
     log("data families: " + ", ".join(f"{k}={len(v)}" for k, v in sorted(plan.items())))
     from .models import cfg
     off = set(cfg().get("experts_off", []))
+    rates = {**RATES, **{k: tuple(v) for k, v in cfg().get("budget", {}).items()}}
+    queue = []                      # (name, mod, region, paths, prior cost s) in execution order
     for name in EXPERTS:
         if name in off:
             log(f"expert {name}: disabled by config")
@@ -56,19 +66,41 @@ def run(in_dir, t0):
             continue
         jobs = _jobs_for(mod, plan)
         jobs.sort(key=lambda j: sum(p.stat().st_size for p in j[1]))   # small regions first
-        for region, paths in jobs:
-            if time.time() > deadline:
-                log(f"budget spent: skipping {name} on {region.name}")
-                continue
-            ts = time.time()
-            try:
-                feats = mod.predict(region, paths, deadline)
-                COLLECTED.extend(feats)
-                log(f"{name:12s} {region.name:28s} {len(feats):5d} feats {time.time() - ts:6.1f}s")
-            except Exception:
-                traceback.print_exc()
-                log(f"{name} failed on {region.name}")
-    feats = list(COLLECTED)
+        queue += [(name, mod, region, paths, _job_cost(name, paths, rates)) for region, paths in jobs]
+    log(f"{len(queue)} jobs, prior cost {sum(q[4] for q in queue):.0f}s for a {BUDGET_S:.0f}s budget")
+    spent, prior = {}, {}           # measured vs prior seconds per expert → speed ratio for its remaining jobs
+    for i, (name, mod, region, paths, cost) in enumerate(queue):
+        now = time.time()
+        if now > deadline:
+            log(f"budget spent: skipping {name} on {region.name}")
+            continue
+        # Speed ratio: an expert's own measurement once it has run, else the slowest ratio seen so far
+        # (a slow machine or unusually heavy data slows every expert; never assume faster than the prior).
+        seen = [spent[k] / prior[k] for k in spent if prior[k] > 0]
+        default = max([1.0] + seen)
+        ratio = lambda k: spent[k] / prior[k] if prior.get(k) else default
+        reserve = sum(c * ratio(n) for n, _, _, _, c in queue[i + 1:])
+        # Everything not reserved for later jobs is this job's to use: under no pressure that is far more than it
+        # needs (experts run at full quality); under pressure the experts' own deadline checks degrade gracefully.
+        job_deadline = min(deadline, max(deadline - reserve, now + 0.3 * cost * ratio(name)))
+        if job_deadline < deadline - 1:
+            log(f"time pressure: {name} on {region.name} gets {job_deadline - now:.0f}s ({reserve:.0f}s reserved)")
+        ts = time.time()
+        try:
+            feats = mod.predict(region, paths, job_deadline)
+            COLLECTED.extend(feats)
+            log(f"{name:12s} {region.name:28s} {len(feats):5d} feats {time.time() - ts:6.1f}s (prior {cost:.0f}s)")
+        except Exception:
+            traceback.print_exc()
+            log(f"{name} failed on {region.name}")
+        spent[name] = spent.get(name, 0.0) + time.time() - ts
+        prior[name] = prior.get(name, 0.0) + cost
+    return finalize(list(COLLECTED))
+
+
+def finalize(feats):
+    """Region dedupe within data type, then cross-modal fusion.  Also used by the watchdog on partial results."""
+    raw = list(feats)
     try:
         from .models import cfg
         dd = cfg().get("dedupe", {})
@@ -97,5 +129,5 @@ def run(in_dir, t0):
             log(f"cross-modal fusion: {n0} → {len(feats)} features")
     except Exception:
         traceback.print_exc()
-        feats = list(COLLECTED)
+        feats = raw
     return feats

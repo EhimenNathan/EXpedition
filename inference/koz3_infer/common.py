@@ -4,6 +4,7 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -26,8 +27,25 @@ def resolve_output_path(arg):
     return p / "result.geojson"
 
 
+_WRITE_LOCK = threading.Lock()
+_WRITTEN = False
+
+
 def write_result_atomic(features, out_path):
-    """Write once: temp file in the same directory → fsync → os.replace (atomic on one filesystem)."""
+    """Write once: temp file in the same directory → fsync → os.replace (atomic on one filesystem).
+
+    Called by the main thread and by the watchdog; whichever comes first writes, the other returns False.
+    """
+    global _WRITTEN
+    with _WRITE_LOCK:
+        if _WRITTEN:
+            return False
+        _write(features, out_path)
+        _WRITTEN = True
+        return True
+
+
+def _write(features, out_path):
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     features = sorted(features, key=lambda f: -f["properties"].get("confidence", 0.0))[:MAX_FEATURES]
