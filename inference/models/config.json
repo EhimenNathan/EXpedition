@@ -41,13 +41,15 @@
    "x": 0.5,
    "t2": 0.35
   },
-  "kurgan_hedge": 0.4
+  "kurgan_hedge": 0.4,
+  "gor_snap": {
+   "rho": 0.2,
+   "s_min": 0.02
+  }
  },
  "ae": {
   "det_thr": 0.7,
-  "classes": [
-   "kurgany_povrezhdennye"
-  ],
+  "classes": [],
   "n_models": 2,
   "r_out": 1.0,
   "class_thr": {
@@ -82,9 +84,7 @@
    "li->sp_or": 0.1
   }
  },
- "experts_off": [
-  "ae"
- ],
+ "experts_off": [],
  "budget": {
   "geo": [
    7.21,
