@@ -227,3 +227,22 @@ Adding gradient magnitude (3 scales), structure-tensor coherence and LBP texture
 leave-one-region-out protocol: EtGr nested F1 0.567 → 0.532 (TP 382 → 338), MagGr 0.276 → 0.303, TerFl 0.234 → 0.275,
 all object_poly 0.435 → 0.419. The EtGr loss outweighs gains on the two methods that stay with the deployed pipeline;
 v1 features are kept (the script reproduces v1).
+
+## Experiment 6: DINOv3-SAT frozen features for satellite kurgans (`experiments/claude/sp_dinov3_probe.py`)
+
+Frozen `facebook/dinov3-vitl16-pretrain-sat493m` (303 M parameters, ≈ 0.61 GB fp16), 64 m × 64 m chips at 0.5 m
+around multi-scale LoG blob candidates in 19 single-image satellite screenshots (6,742 chips, ≈ 140 inside kurgan
+labels), CLS + mean patch token, logistic regression, leave-one-scene-out:
+
+| features | AUC pooled | AUC per scene |
+|---|---:|---:|
+| blob appearance (LoG response, scale, polarity) | 0.576 | 0.582 |
+| DINOv3-SAT frozen embedding | **0.749** | **0.856** |
+| DINOv3-SAT + appearance | 0.753 | 0.855 |
+
+Strong transferable signal against a weak (blob) baseline; the deployed D-FINE ensemble already encodes much
+appearance, so the decisive test is `scripts/sp_dinov3_verifier_oof.py` on the deployed fused satellite candidates
+(nested λ, per fold, robust acceptance). CPU: 0.40 s per chip (4 cores); on the platform RTX 4090 a public-size set is
+well under a minute. Archive: v21 1.36 GB + 0.61 GB ≈ 1.97 GB, inside the 2 GB limit with little margin.
+The LiDAR rescue and the geophysics fusion results are recorded by Codex on `codex/v21-robust` (rescue rejected:
+nested and oracle chose none; EtGr fusion: nested 0.4911 → 0.5513, fixed 20/80 blend 0.5592, paired rehearsal +0.0015).
