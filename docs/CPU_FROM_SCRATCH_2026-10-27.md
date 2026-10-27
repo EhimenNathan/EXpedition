@@ -26,7 +26,12 @@ comparable; the CPU hillfort path (F1 0.585) is the component that clearly beats
   5 / 15 m); labels registered (≥ 90 % inside the DTM in every region).
 * Hillfort localiser on whole-region relief tokens: hit 0.545 of 22 hillfort regions vs region centre 0.091; presence
   gate AUC 0.832.
-* ResNet-18 CenterNet on relief: training.
+* ResNet-18 CenterNet on relief (4 folds × 4,000 steps, bf16 CPU): **honest LiDAR 0.377** (damaged 0.459, intact 0.501,
+  hillforts 0.400 with the relief localiser + presence gate, fortifications 0.070; the single LiDAR architecture label
+  counts at weight 10 → ≈ 0.43 without it). Framing prior chosen in 4/4 folds. Deployed v21 LiDAR (GPU U-Net blend)
+  ≈ 0.55–0.59 on its own folds → the CPU model is a candidate complementary member (blind sites), not a replacement.
+* Rejected: class-aware ensemble weights for satellite (nested 0.299 < equal weights 0.326; choices flip between folds).
+* Container restarts while idle: training checkpoints every 250 steps and resumes (verified kill → resume at step 250).
 
 Scripts: experiments/claude/sp_dense/ (extract, heads, evaluate), experiments/claude/sp_cnn/ (cache, cache_li, train,
 ensemble), experiments/claude/li_dense/ (extract, hillfort_tokens), experiments/claude/hf_scene_cls.py,
