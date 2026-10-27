@@ -1,4 +1,4 @@
-"""Regression check: EtGr layers survive final dedupe, satellite overlaps do not."""
+"""Regression check: EtGr layers survive final dedupe; optical duplicates across images do not."""
 from pathlib import Path
 import json
 import sys
@@ -36,12 +36,12 @@ if __name__ == "__main__":
     assert len(sp) == 1, len(sp)
     sp_layers = apply_final_dedupe([feature("sp_or", "obj1", .9, "scene1"),
                                     feature("sp_or", "obj2", .8, "scene2")], dd)
-    assert len(sp_layers) == 2, len(sp_layers)
+    assert len(sp_layers) == 1, len(sp_layers)     # one object per data type, even with source_layer set
     from koz3_infer.run import _jobs_for
     region = Path("region_with_etgr_and_terfl")
     et_path, tf_path = Path("map.tif"), Path("profile.png")
     plan = {"etgr": [(region, [et_path])], "terfl": [(region, [tf_path])]}
     jobs = _jobs_for(SimpleNamespace(FAMILIES=["etgr", "terfl", "maggr"]), plan)
     assert jobs == [(region, [et_path, tf_path])], jobs
-    print("PASS: EtGr keeps 2/2 layers; legacy imagery dedupes 2->1; independent source layers keep 2/2; "
+    print("PASS: EtGr keeps 2/2 layers; legacy imagery dedupes 2->1; optical source layers dedupe 2->1; "
           "multi-family region queues once")

@@ -169,21 +169,11 @@ def _predict_pooled(region, paths, deadline):
 
 
 def predict(region, paths, deadline):
-    """Run every source image as an independent reference layer.
+    """Fuse all satellite scenes of a region into one set of objects.
 
-    The organisers clarified that two views of the same physical object are two
-    reference objects.  Model/member fusion remains within one image; detections
-    are never fused across source images.
+    Within one data type an object is one polygon even when several images show
+    it (competition rules); duplicates across scenes are false positives.  The
+    training labels agree: 129 satellite labels in overlaps of 19 multi-image
+    regions, no duplicate pairs.
     """
-    if len(paths) <= 1:
-        return _predict_pooled(region, paths, deadline)
-    feats = []
-    for path in paths:
-        one = _predict_pooled(region, [path], deadline)
-        for ft in one:
-            # Source image is part of the target identity.  Keep the existing
-            # per-object image id so within-image duplicate removal is unchanged;
-            # dedupe_region uses source_layer to isolate independent images.
-            ft["properties"]["source_layer"] = path.name
-        feats.extend(one)
-    return feats
+    return _predict_pooled(region, paths, deadline)
