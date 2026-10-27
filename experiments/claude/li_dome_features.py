@@ -60,7 +60,11 @@ def site(reg):
             kur += g
     if not allp:
         return pd.DataFrame()
-    C, rough, area = candidates(d, v)
+    from rasterio.features import rasterize
+    from rasterio.transform import from_origin
+    zone = unary_union(allp).convex_hull.buffer(30)
+    zmask = rasterize([(zone.buffer(20), 1)], d.shape, transform=from_origin(x0, y1, R, R)) > 0
+    C, rough, area = candidates(d, v & zmask)          # only the labelled zone (+ margin for the 10 m erosion)
     if not len(C):
         return pd.DataFrame()
     df = pd.DataFrame(C, columns=["px", "py", "h", "snr", "sym", "rad", "l2"])
@@ -96,7 +100,6 @@ def site(reg):
         hs = strong.h.values; df["nbr_h"] = [hs[i[1:]].mean() for i in ii]
     else:
         df[["n20", "n50", "nn1", "nn3", "nbr_h"]] = 0.0
-    zone = unary_union(allp).convex_hull.buffer(30)
     inz = np.array([zone.contains(Point(a, b)) for a, b in XY])
     df = df[inz].reset_index(drop=True)
     tree = STRtree(kur) if kur else None
