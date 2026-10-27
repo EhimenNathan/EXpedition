@@ -220,3 +220,10 @@ around the labels: Borovichi-1 and Teshilovo show a sharp pit with a raised rim 
 Vyshenskoe and Verkhmarevo are raised (ramparts / bastions); Sudbishchi-1 shows almost no relief. A linear trench
 (Frangi) model does not fit, a pit-with-rim detector would be validated essentially on one site, and the class weight
 is 5 (~0.0004 per object). Not pursued.
+
+### Geophysics detector v2 features — rejected
+
+Adding gradient magnitude (3 scales), structure-tensor coherence and LBP texture shares to the pixel model, same
+leave-one-region-out protocol: EtGr nested F1 0.567 → 0.532 (TP 382 → 338), MagGr 0.276 → 0.303, TerFl 0.234 → 0.275,
+all object_poly 0.435 → 0.419. The EtGr loss outweighs gains on the two methods that stay with the deployed pipeline;
+v1 features are kept (the script reproduces v1).
