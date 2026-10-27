@@ -78,3 +78,53 @@ median 0.23 half-sizes from the centre; the centre is inside 30 %. A greedy poin
 hits only 0.125 new hillforts per extra emitted point on held-out regions (in scenes known to contain one), below the
 ≈ 0.14 break-even before gate errors. Extra blind points lose; placement needs image evidence (the deployed snap).
 Hillfort polygons are solid (median solidity 0.98, no holes), so the misses are offsets, not hollow shapes.
+
+## Drift: public composition differs from training
+
+From the public structure file (file sizes) against the 2,132 training files:
+
+| data type | median file train / public | share < 20 MB train / public |
+|---|---|---|
+| satellite | 4.2 / 191.5 MB | 0.87 / 0.45 |
+| LiDAR LAS | 222 / 24 MB | 0.19 / 0.38 |
+| aerial | 138 / 197 MB | 0.22 / 0.00 |
+
+- Satellite: 17 of 30 public regions contain large scenes (≥ 20 MB) against 20 of 132 training regions (57 % vs 15 %).
+  Large scenes are high-resolution (median GSD 0.15 m vs 0.74 m) and sparse in labels (5.1 vs 10.8 per km²).
+  Inference resamples all satellite scenes to 0.5 m (`sp_or.py`, `read_scene(.., 0.5)`), so resolution drift is
+  normalised, but the scene-type mix is not: OOF tuning weights regions equally and is dominated by screenshots.
+  `scripts/sp_composition_oof.py` re-runs the deployed satellite decoding with regions importance-weighted to the
+  public mix (nested, per-fold, unweighted result alongside).
+- LiDAR: 9 of 13 public clouds are under 35 MB (small areas or sparse clouds); in training, small clouds are mostly the
+  Swedish 1–3 pts/m² sites (Erentuna-like). The Erentuna scale test (above) matters more than its training weight.
+
+## Uncertainty: how much of the score is the draw of regions
+
+Monte Carlo (20,000 draws) of private sets with the public composition (17 large-scene + 13 screenshot satellite,
+13 LiDAR, 4 aerial, 1 ortho, 2 MagGr, 1 EtGr, 1 TerFl regions resampled from training labels), each object detected
+with the public per-data-type recall and false alarms at the public precision (v20 log). Model quality held fixed.
+
+| private size | mean | SD | 90 % interval |
+|---|---:|---:|---|
+| ×0.5 | 0.528 | 0.045 | 0.444–0.591 |
+| ×1 | 0.535 | 0.034 | 0.473–0.582 |
+| ×2 | 0.536 | 0.025 | 0.491–0.572 |
+
+Region draw alone moves the score by about ±0.055 at public size, more than every lever tested today and more than
+the gap to the public leader. Kurgan classes dominate the variance (weight × per-class F1 SD: damaged 30 × 0.065,
+intact 20 × 0.095); fortifications swing most per class (SD 0.14) at weight 5. The model is optimistic (mean 0.535 vs
+public 0.502; no class confusion or site failures), so the true spread is larger. Choose finals by expected score
+under resampling, never by public deltas below ~0.03.
+
+## Small objects: emitted circle radius vs placement error
+
+All 7,503 polygon labels; prediction = circle at the pole of inaccessibility plus Gaussian placement error σ,
+official hit rule (centre inside the label, coverage ≥ 0.5 of the smaller shape)
+(`experiments/claude/insight_radius_sim.py`).
+
+- Radius 0.25–2 m changes hit rates by < 1 point for every class except architecture (+2 points at r = 0.25 m,
+  48 % of ortho architecture labels are < 1 m wide inside) — not a lever.
+- Placement error dominates for geophysics objects: 75 % of EtGr objects are < 1 m wide inside; hit rate 0.99 → 0.75
+  at σ = 0.5 m → 0.55 at σ = 1 m. Kurgans and hillforts tolerate 1 m (≥ 0.97).
+- The public ≤ 100 m² recall (0.63) equals the LiDAR / geophysics recall that makes up those objects; at the 0.5 m
+  working grid the smallest-decile LiDAR kurgan still spans ~10 px. No small-object-specific deficit found.
