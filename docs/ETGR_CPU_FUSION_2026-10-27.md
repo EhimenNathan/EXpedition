@@ -55,4 +55,35 @@ Paired 26-region rehearsals against the same current input and GT:
 | v21 control | 278.7 s | 3,065 | 0.506 | **0.5291** |
 | EtGr fusion | 322.9 s | 3,201 | 0.521 | **0.5306** |
 
-All unrelated class counts and scores were exactly identical in the paired run. The full-system gain is only **+0.0015**, so this fails the substantial-gain submission gate despite the clean EtGr signal. The candidate archive was deleted. The implementation remains asset-gated: without `inference/models/geo/etgr_cpu.json`, behavior is unchanged.
+All unrelated class counts and scores were exactly identical in the paired run. The full-system gain is **+0.0015**. This is too small to justify a public score experiment, but it is an isolated controlled gain: only EtGr changes.
+
+## Fine plateau audit
+
+The initial fixed setting was checked on a dense neighborhood rather than treated as a single lucky grid point:
+
+- CPU weight: 0.10, 0.15, 0.20, 0.25, 0.30;
+- threshold: 0.25, 0.275, 0.30, 0.325, 0.35;
+- minimum area: 0.025, 0.05, 0.075, 0.10 square metres;
+- fixed interior-patch anchor.
+
+The result is a broad plateau. **33 neighboring fixed settings did not regress any of the six EtGr regions.** Examples:
+
+| CPU weight | Threshold | Min area | Pooled EtGr F1 | Worst regional gain |
+|---:|---:|---:|---:|---:|
+| 0.10 | 0.30 | 0.10 | 0.5513 | +0.0228 |
+| 0.20 | 0.275 | 0.10 | 0.5586 | +0.0194 |
+| 0.20 | 0.30 | 0.05 | 0.5592 | +0.0093 |
+| 0.25 | 0.275 | 0.10 | 0.5676 | +0.0168 |
+
+The fine-grid nested score is **0.5530** versus deployed **0.4911**. Its selected settings regress region 212 by 0.0195, but the conservative fixed 20/80 deployment setting remains positive on every region and lies inside the stable plateau.
+
+## Final candidate
+
+The controlled candidate was rebuilt after the plateau passed:
+
+- archive: `build/koz3_submission_v22_etgr_fusion_final_20261027.zip`
+- size: 876,151,485 bytes
+- SHA-256: `f420703d84b1109017ff244b74bad3457986352f882bc8d2d2c4baf823761fcc`
+- ZIP integrity: passed; all three EtGr integration assets occur exactly once
+
+Use v21 for public-score anchoring. At final selection, v21 + EtGr is the positive-expectation candidate. The implementation remains asset-gated: without `inference/models/geo/etgr_cpu.json`, behavior is unchanged.
