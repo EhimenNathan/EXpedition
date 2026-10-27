@@ -1,8 +1,9 @@
+"""Diagnose whether Erentuna LiDAR misses are heat, position, or class failures."""
 import pickle, subprocess, gc, sys
 from pathlib import Path
 import numpy as np
-ROOT=Path('/home/nathan/Expedition Competition')
-sys.path[:0]=[str(ROOT),str(ROOT/'Codex Work/v21_robust_wt')]
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 reg='011_Эрентуна'; acc=None
 for name in ('oof_ens.pkl.zst','oof_aug.pkl.zst','oof_augx.pkl.zst'):
  p=ROOT/'work/li'/name; print('load',name,flush=True)
@@ -36,4 +37,4 @@ print(D.groupby('hit').agg(n=('hit','size'),heat_in_med=('heat_in','median'),pea
 for k in (5,10,20): print('miss nearest <=',k,'m',float((D.loc[~D.hit,'nearest_peak_m']<=k).mean()))
 print('miss heat_in >=.15',float((D.loc[~D.hit,'heat_in']>=.15).mean()))
 print('miss wrong>correct',float((D.loc[~D.hit,'wrong_mask']>D.loc[~D.hit,'correct_mask']).mean()))
-D.to_parquet(ROOT/'Codex Work/erentuna_heat_diagnostic.parquet')
+D.to_parquet(ROOT/'work/li/erentuna_heat_diagnostic.parquet')
