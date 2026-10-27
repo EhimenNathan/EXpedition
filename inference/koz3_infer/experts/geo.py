@@ -67,12 +67,35 @@ def predict(region, paths, deadline):
         if not probs:
             continue
         prob = np.average(np.stack(probs), axis=0, weights=ws)
+        local_res = RES
+        etgr_cpu = _etgr_cpu()
+        if method == "EtGr" and etgr_cpu is not None:
+            from koz3 import geo_etgr_cpu
+            a2, v2, t2, crs2 = geo_etgr_cpu.read_grid(u["path"], crs_fallback=utm_crs(region))
+            H2, W2 = v2.shape
+            b2 = extra_mask(str(region), method, key, "границы", (H2, W2), t2, crs2)
+            n2 = extra_mask(str(region), method, key, "шум", (H2, W2), t2, crs2)
+            if b2 is not None: v2 &= b2.astype(bool)
+            if n2 is not None: v2 &= ~n2.astype(bool)
+            if v2.sum() >= 100:
+                cpu = geo_etgr_cpu.predict(a2, v2, etgr_cpu)
+                deployed = np.zeros((H2, W2), np.float32)
+                reproject(prob, deployed, src_transform=t, src_crs=crs,
+                          dst_transform=t2, dst_crs=crs2, resampling=Resampling.bilinear)
+                prob = 0.2 * cpu + 0.8 * deployed
+                v, t, crs, local_res = v2, t2, crs2, geo_etgr_cpu.RES
         tr = Transformer.from_crs(crs, 3857, always_xy=True)
         f = lambda xx, yy: tr.transform(*(t * (np.asarray(xx, float), np.asarray(yy, float))))
         k = 0
         thr = oc.get("thr_method", {}).get(method, oc["thr"])     # per-method (nested: MagGr 0.75; EtGr / TerFl keep thr)
-        objs = objects_from_mask(prob, v, thr, int(oc["min_area_m2"] / RES ** 2))
-        if oc.get("anchor") == "pole":      # small interior patch at the pole of inaccessibility (nested 0.4197 → 0.4306)
+        min_area = 0.05 if (method == "EtGr" and local_res < RES) else oc["min_area_m2"]
+        objs = objects_from_mask(prob, v, thr, int(min_area / local_res ** 2))
+        if method == "EtGr" and local_res < RES:  # fixed 0.25 m interior patch used by the nested fusion gate
+            from shapely.ops import polylabel
+            from shapely.geometry import Point as _Pt
+            objs = [(_Pt(q.x, q.y).buffer(0.25 / local_res, 12), sc_)
+                    for p_, sc_ in objs for q in [polylabel(p_, tolerance=0.5)]]
+        elif oc.get("anchor") == "pole":      # small interior patch at the pole of inaccessibility (nested 0.4197 → 0.4306)
             from shapely.ops import polylabel
             from shapely.geometry import Point as _Pt
             objs = [(_Pt(q.x, q.y).buffer(max(0.5, min(1.0 / RES, 0.8 * p_.exterior.distance(q))), 12), sc_)
@@ -89,6 +112,18 @@ def predict(region, paths, deadline):
 
 
 _OBJ = None
+_ETGR = None
+
+
+def _etgr_cpu():
+    global _ETGR
+    if _ETGR is None:
+        from koz3.gbm_np import NumpyGBM
+        from ..models import model_dir
+        p = os.path.join(model_dir("geo"), "etgr_cpu.json")
+        _ETGR = NumpyGBM(p) if os.path.exists(p) else False
+        log(f"geo EtGr CPU member: {bool(_ETGR)}")
+    return _ETGR if _ETGR is not False else None
 
 
 def _obj_gbms(oc):

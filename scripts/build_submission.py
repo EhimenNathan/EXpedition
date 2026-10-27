@@ -17,7 +17,7 @@ import zipfile
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
-KOZ3_MODULES = ["__init__", "dtm", "relief", "hm", "sp_io", "geo_prep", "geo_train", "li_train", "sp_train", "labels", "fuse", "peaks", "geo_feats", "geo_finds_core", "geo_data", "gbm_np", "geo_objects_core", "prev_sp_io", "prev_sp_det", "sp_fuse", "det_train", "dedupe", "ae_det_train", "tv_det_train"]
+KOZ3_MODULES = ["__init__", "dtm", "relief", "hm", "sp_io", "geo_prep", "geo_train", "li_train", "sp_train", "labels", "fuse", "peaks", "geo_feats", "geo_finds_core", "geo_data", "gbm_np", "geo_objects_core", "geo_etgr_cpu", "prev_sp_io", "prev_sp_det", "sp_fuse", "det_train", "dedupe", "ae_det_train", "tv_det_train"]
 EXPERT_BUILD = {   # expert dir → (builder module, example input channels)
     "geo": ("koz3.geo_train", 3),
     "li": ("koz3.li_train", 9),
