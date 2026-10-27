@@ -22,6 +22,13 @@ sys.path.insert(0, ROOT)
 W_ = os.path.join(ROOT, os.environ.get("CNN_WORK", "work/sp_cnn"))
 MOD = os.environ.get("KOZ3_MOD", "SpOr")
 DEV = os.environ.get("CNN_DEVICE") or ("cuda" if __import__("torch").cuda.is_available() else "cpu")
+
+
+def amp_dtype(dev=None):
+    """bf16 on CPU (AMX) and bf16-capable GPUs; fp16 (with loss scaling in training) on older GPUs such as the T4."""
+    import torch
+    dev = dev or DEV
+    return torch.bfloat16 if dev == "cpu" or torch.cuda.is_bf16_supported() else torch.float16
 CROP, STRIDE, NCH = 256, 4, 4
 MEAN = np.array([0.485, 0.456, 0.406], np.float32) * 255; STD = np.array([0.229, 0.224, 0.225], np.float32) * 255
 
@@ -191,7 +198,7 @@ def predict_scene(model, img, valid, tile=512, step=384, dev=None):
             a[:part.shape[0], :part.shape[1]] = part
             dev = dev or DEV
             x = torch.from_numpy(((a - MEAN) / STD).transpose(2, 0, 1)[None].copy()).to(dev)
-            with torch.inference_mode(), torch.autocast(dev, dtype=torch.bfloat16):
+            with torch.inference_mode(), torch.autocast(dev, dtype=amp_dtype(dev)):
                 o = torch.sigmoid(model(torch.cat([x, torch.flip(x, (3,))])).float())
                 o = ((o[0] + torch.flip(o[1], (2,))) / 2).cpu().numpy()
             gr, gc = r // STRIDE, c // STRIDE
@@ -227,13 +234,14 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
             model.load_state_dict(c["model"]); opt.load_state_dict(c["opt"]); sched.load_state_dict(c["sched"])
             rng.bit_generator.state = c["rng"]; torch.set_rng_state(c["torch_rng"]); start = c["it"]
             print(f"  fold {f} resumed at it {start}", flush=True)
+        scaler = torch.amp.GradScaler("cuda", enabled=(DEV == "cuda" and amp_dtype() == torch.float16))
         model.train()
         for it in range(start, int(iters)):
             X, Y, M, V = (torch.from_numpy(a).to(DEV) for a in sample(tr, rng, bs))
-            with torch.autocast(DEV, dtype=torch.bfloat16):                # bf16 (CPU AMX ~2.7× faster; GPU autocast)
+            with torch.autocast(DEV, dtype=amp_dtype()):                    # bf16 (CPU AMX ~2.7× faster) / fp16 on T4
                 out = model(X.float())
             loss = loss_fn(out.float(), Y, M, V.float())
-            opt.zero_grad(); loss.backward(); opt.step(); sched.step()
+            opt.zero_grad(); scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); sched.step()
             if it % 200 == 0:
                 print(f"  fold {f} it {it} loss {loss.item():.3f} {time.time() - t0:.0f}s", flush=True)
             if (it + 1) % 250 == 0 and it + 1 < int(iters):

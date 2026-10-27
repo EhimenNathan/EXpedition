@@ -19,10 +19,10 @@ def predict_d4(model, img, valid, tile=512, step=384):
         for c in cs:
             a = np.zeros((tile, tile, 3), np.float32); part = np.asarray(img[r:r + tile, c:c + tile], np.float32)
             a[:part.shape[0], :part.shape[1]] = part
-            x = torch.from_numpy(((a - T.MEAN) / T.STD).transpose(2, 0, 1)[None].copy())
+            x = torch.from_numpy(((a - T.MEAN) / T.STD).transpose(2, 0, 1)[None].copy()).to(T.DEV)
             views = [torch.rot90(x, k, (2, 3)) for k in range(4)]; views += [torch.flip(v, (3,)) for v in views]
-            with torch.inference_mode(), torch.autocast("cpu", dtype=torch.bfloat16):
-                o = torch.sigmoid(model(torch.cat(views)).float())
+            with torch.inference_mode(), torch.autocast(T.DEV, dtype=T.amp_dtype()):
+                o = torch.sigmoid(model(torch.cat(views)).float()).cpu()
             outs = [torch.rot90(o[k], -k, (1, 2)) for k in range(4)] + [torch.rot90(torch.flip(o[4 + k], (2,)), -k, (1, 2)) for k in range(4)]
             o = torch.stack(outs).mean(0).numpy()
             gr, gc = r // T.STRIDE, c // T.STRIDE; h, w = min(n, gh - gr), min(n, gw - gc)
@@ -38,7 +38,7 @@ def main(tag="resnet18", out_tag="resnet18_d4", arch="resnet18", seed=0):
     L = gpd.read_parquet(os.path.join(T.ROOT, "data/labels_3857.parquet")); fo = site_folds(L[L["mod"] == T.MOD])
     S = T.load_all(); out = os.path.join(T.W_, "oof_" + out_tag); os.makedirs(out, exist_ok=True)
     for f in sorted({fo[s["region"]] for s in S}):
-        m = T.build(arch, pretrained=False); m.load_state_dict(torch.load(os.path.join(T.W_, "models", f"{tag}_f{f}_s{int(seed)}.pt"), map_location="cpu")); m.eval()
+        m = T.build(arch, pretrained=False); m.load_state_dict(torch.load(os.path.join(T.W_, "models", f"{tag}_f{f}_s{int(seed)}.pt"), map_location="cpu")); m.to(T.DEV).eval()
         for s in [s for s in S if fo[s["region"]] == f]:
             if os.path.exists(os.path.join(out, s["idx"] + ".npz")):
                 continue
