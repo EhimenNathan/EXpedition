@@ -44,3 +44,37 @@ Stacked 30 m local-relief model around every LiDAR kurgan label (0.25 m DTM from
 2. Erentuna (large, prominent, aligned domes) is a genuine model miss; a scale / regional appearance issue to inspect
    with the model's heatmaps.
 3. The 5–10 k m² public zero is mostly two object kinds (satellite hillforts, giant ploughed kurgans), both rare.
+
+## LiDAR signal-to-clutter by site (the model's own relief scales)
+
+Local relief L_σ = DTM − Gaussian(DTM, σ) at 0.5 m, as in `koz3/relief.py`. Signal = median of the maximum L_σ inside
+each kurgan label; clutter = std of L_σ on background (> 10 m from any label); look-alikes = background local maxima
+reaching half the median mound signal (`experiments/claude/insight_li_snr.py`).
+
+| site | known kurgan recall | SNR σ=2 m | SNR σ=5 m | look-alikes/km² (σ=5 m) |
+|---|---|---:|---:|---:|
+| 180 Gnezdovo-Lesnaya-2 | 0.70–0.84 | 11.2 | 6.6 | 0 |
+| 179 Gnezdovo-Lesnaya-1 | 0.70–0.84 | 8.3 | 6.9 | 1,314 |
+| 181 Gnezdovo-Lesnaya-3 | 0.70–0.84 | 5.6 | 4.4 | 1,151 |
+| 021 Novenkoe | 0.14–0.19 | 2.2 | **1.2** | 2,421 |
+| 102 Gnezdovo-Zaolshanskaya | 0.09–0.35 | 3.0 | **1.7** | 3,343 |
+| 036 Timerevo | 0.41 | 2.8 | **1.9** | 3,027 |
+| 011 Erentuna | 0.14–0.30 | 7.2 | **4.9** | **539** |
+
+Other sites (recall not recorded): 004 Borovichi-1 4.6, 013 Nora-Vinnon 2.4, 017 Yushkovo 8.1, 028 Vyshegzha-2 2.3,
+030 Esbyu 4.1, 101 Gnezdovo-Dneprovskaya 3.0, 190 Muravlevo 3.5.
+
+- Three of the four weak sites are physics-limited: mound relief is only 1.2–1.9× the background roughness and
+  natural look-alikes are dense. This is a recall ceiling, not a training defect; do not target it.
+- Erentuna is the exception: prominent mounds (0.79 m at σ=5 m), flat ground, few look-alikes — a genuine model miss.
+  Its mounds are the largest in the set (median diameter 12 m, p90 18 m) against 6–10 m at the dominant training
+  sites, beyond the ×0.7–1.45 zoom augmentation. GPU test: zoom augmentation to ×2.2 and/or an additional half-
+  resolution inference pass, judged on held-out folds containing 011, 004, 013, 016, 018, 104.
+
+## Satellite hillfort placement without image evidence — rejected
+
+63 satellite hillforts in screenshots cover a median 1.1 % of the scene (normalised radius ≈ 0.12) with centroids a
+median 0.23 half-sizes from the centre; the centre is inside 30 %. A greedy point pattern learned on the other regions
+hits only 0.125 new hillforts per extra emitted point on held-out regions (in scenes known to contain one), below the
+≈ 0.14 break-even before gate errors. Extra blind points lose; placement needs image evidence (the deployed snap).
+Hillfort polygons are solid (median solidity 0.98, no holes), so the misses are offsets, not hollow shapes.
