@@ -4,7 +4,9 @@ CenterNet heatmaps at stride 4 (2 m at 0.5 m GSD). Out of fold over koz3.sp_prep
 Channels: 0 kurgan centre heat, 1 damaged share (masked), 2 architecture heat, 3 fortification heat.
 Crops 256 px (128 m): 60 % centred near a labelled object (class-balanced), 40 % random; augmentation: d4 (flips +
 rot90), scale ×0.8–1.25, brightness / contrast / gamma, colour jitter, Gaussian blur, noise.
-  python experiments/claude/sp_cnn/train.py [iters=3000] [folds=0,1,2,3,-1] [arch=resnet18]
+  python experiments/claude/sp_cnn/train.py [iters=3000] [folds=0,1,2,3,-1] [arch=resnet18|resnet50|satlas_swinb]
+Device: CNN_DEVICE (default cuda when available); CNN_LR, CNN_BS override the learning rate / batch size;
+SP_CNN_TAG names the OOF folder (default = arch).
 OOF maps → work/sp_cnn/oof/<idx>.npz (p (4, H/4, W/4) float16, T of the map grid, crs, valid, region, tif).
 """
 import glob
@@ -19,8 +21,45 @@ ROOT = os.path.join(HERE, "..", "..", "..")
 sys.path.insert(0, ROOT)
 W_ = os.path.join(ROOT, os.environ.get("CNN_WORK", "work/sp_cnn"))
 MOD = os.environ.get("KOZ3_MOD", "SpOr")
+DEV = os.environ.get("CNN_DEVICE") or ("cuda" if __import__("torch").cuda.is_available() else "cpu")
 CROP, STRIDE, NCH = 256, 4, 4
 MEAN = np.array([0.485, 0.456, 0.406], np.float32) * 255; STD = np.array([0.229, 0.224, 0.225], np.float32) * 255
+
+
+class SatlasSwin:
+    """SatlasPretrain aerial Swin-V2-B (allenai/satlas-pretrain aerial_swinb_si.pth, 0.5–2 m NAIP imagery) as a
+    4-level feature extractor (strides 4 / 8 / 16 / 32). Satlas expects RGB in 0–1, so ImageNet-normalised input is
+    converted back inside the module."""
+
+    @staticmethod
+    def make(pretrained=True):
+        import torch
+        import torch.nn as nn
+        import torchvision
+
+        class Enc(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.body = torchvision.models.swin_v2_b().features
+                if pretrained:
+                    from huggingface_hub import hf_hub_download
+                    sd = torch.load(hf_hub_download("allenai/satlas-pretrain", "aerial_swinb_si.pth"), map_location="cpu")
+                    self.body.load_state_dict({k[len("backbone.backbone.features."):]: v for k, v in sd.items()
+                                               if k.startswith("backbone.backbone.features.")})
+                self.register_buffer("m", torch.tensor(MEAN / 255).view(1, 3, 1, 1).float())
+                self.register_buffer("s", torch.tensor(STD / 255).view(1, 3, 1, 1).float())
+
+            def forward(self, x):
+                x = (x * self.s + self.m).clamp(0, 1); out = []
+                for i, layer in enumerate(self.body):
+                    x = layer(x)
+                    if i in (1, 3, 5, 7):
+                        out.append(x.permute(0, 3, 1, 2))
+                return out
+
+            def channels(self):
+                return [128, 256, 512, 1024]
+        return Enc()
 
 
 def build(arch="resnet18", pretrained=True):
@@ -31,9 +70,12 @@ def build(arch="resnet18", pretrained=True):
     class Net(nn.Module):
         def __init__(self):
             super().__init__()
-            self.enc = timm.create_model(arch + (".a1_in1k" if pretrained else ""), pretrained=pretrained, features_only=True,
-                                         out_indices=(1, 2, 3, 4))
-            ch = self.enc.feature_info.channels()
+            if arch == "satlas_swinb":
+                self.enc = SatlasSwin.make(pretrained); ch = self.enc.channels()
+            else:
+                self.enc = timm.create_model(arch + (".a1_in1k" if pretrained else ""), pretrained=pretrained, features_only=True,
+                                             out_indices=(1, 2, 3, 4))
+                ch = self.enc.feature_info.channels()
             self.lat = nn.ModuleList([nn.Conv2d(c, 96, 1) for c in ch])
             self.out = nn.Sequential(nn.Conv2d(96, 96, 3, padding=1), nn.GroupNorm(8, 96), nn.GELU(), nn.Conv2d(96, NCH, 1))
             nn.init.constant_(self.out[-1].bias, 0.0); self.out[-1].bias.data[[0, 2, 3]] = -4.6
@@ -133,7 +175,7 @@ def loss_fn(out, Y, M, V):
     return l
 
 
-def predict_scene(model, img, valid, tile=512, step=384):
+def predict_scene(model, img, valid, tile=512, step=384, dev=None):
     """Sliding window + horizontal-flip TTA → (NCH, ceil(H/4), ceil(W/4)) probabilities over the valid image."""
     import torch
     H, W = int(valid[0]), int(valid[1])
@@ -147,10 +189,11 @@ def predict_scene(model, img, valid, tile=512, step=384):
         for c in cs:
             a = np.zeros((tile, tile, 3), np.float32); part = np.asarray(img[r:r + tile, c:c + tile], np.float32)
             a[:part.shape[0], :part.shape[1]] = part
-            x = torch.from_numpy(((a - MEAN) / STD).transpose(2, 0, 1)[None].copy())
-            with torch.inference_mode(), torch.autocast("cpu", dtype=torch.bfloat16):
+            dev = dev or DEV
+            x = torch.from_numpy(((a - MEAN) / STD).transpose(2, 0, 1)[None].copy()).to(dev)
+            with torch.inference_mode(), torch.autocast(dev, dtype=torch.bfloat16):
                 o = torch.sigmoid(model(torch.cat([x, torch.flip(x, (3,))])).float())
-                o = ((o[0] + torch.flip(o[1], (2,))) / 2).numpy()
+                o = ((o[0] + torch.flip(o[1], (2,))) / 2).cpu().numpy()
             gr, gc = r // STRIDE, c // STRIDE
             h, w = min(tile // STRIDE, gh - gr), min(tile // STRIDE, gw - gc)
             acc[:, gr:gr + h, gc:gc + w] += o[:, :h, :w] * wgt[:h, :w]; cnt[gr:gr + h, gc:gc + w] += wgt[:h, :w]
@@ -163,6 +206,7 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
     from rasterio.transform import Affine
     from koz3.sp_prep import site_folds
     torch.set_num_threads(os.cpu_count()); torch.manual_seed(seed)
+    print(f"device {DEV}", flush=True)
     L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); fo = site_folds(L[L["mod"] == MOD])
     S = load_all(); fold = np.array([fo[s["region"]] for s in S])
     print(f"{len(S)} scenes, objects {int(sum(len(s['objs']) for s in S))}", flush=True)
@@ -170,12 +214,14 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
     os.makedirs(os.path.join(W_, "oof_" + tag), exist_ok=True); os.makedirs(os.path.join(W_, "models"), exist_ok=True)
     for f in [int(x) for x in str(folds).split(",")]:
         tr = [S[i] for i in range(len(S)) if fold[i] != f]; rng = np.random.default_rng(seed * 100 + f + 1)
-        model = build(arch); opt = torch.optim.AdamW(model.parameters(), 5e-4, weight_decay=1e-4)
-        sched = torch.optim.lr_scheduler.OneCycleLR(opt, 5e-4, total_steps=int(iters), pct_start=0.1)
+        lr = float(os.environ.get("CNN_LR", 2e-4 if arch == "satlas_swinb" else 5e-4))
+        bs = int(os.environ.get("CNN_BS", 12))
+        model = build(arch).to(DEV); opt = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
+        sched = torch.optim.lr_scheduler.OneCycleLR(opt, lr, total_steps=int(iters), pct_start=0.1)
         t0 = time.time(); model.train()
         for it in range(int(iters)):
-            X, Y, M, V = (torch.from_numpy(a) for a in sample(tr, rng, 12))
-            with torch.autocast("cpu", dtype=torch.bfloat16):              # AMX bf16: ~2.7× faster on this CPU
+            X, Y, M, V = (torch.from_numpy(a).to(DEV) for a in sample(tr, rng, bs))
+            with torch.autocast(DEV, dtype=torch.bfloat16):                # bf16 (CPU AMX ~2.7× faster; GPU autocast)
                 out = model(X.float())
             loss = loss_fn(out.float(), Y, M, V.float())
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
