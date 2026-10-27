@@ -205,7 +205,7 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
     import torch
     from rasterio.transform import Affine
     from koz3.sp_prep import site_folds
-    torch.set_num_threads(os.cpu_count()); torch.manual_seed(seed)
+    seed = int(seed); torch.set_num_threads(os.cpu_count()); torch.manual_seed(seed)
     print(f"device {DEV}", flush=True)
     L = gpd.read_parquet(os.path.join(ROOT, "data/labels_3857.parquet")); fo = site_folds(L[L["mod"] == MOD])
     S = load_all(); fold = np.array([fo[s["region"]] for s in S])

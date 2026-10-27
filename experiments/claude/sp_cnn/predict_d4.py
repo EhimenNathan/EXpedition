@@ -30,7 +30,7 @@ def predict_d4(model, img, valid, tile=512, step=384):
     return acc / np.maximum(cnt, 1e-6)
 
 
-def main(tag="resnet18", out_tag="resnet18_d4", arch="resnet18"):
+def main(tag="resnet18", out_tag="resnet18_d4", arch="resnet18", seed=0):
     import geopandas as gpd, torch
     from rasterio.transform import Affine
     from koz3.sp_prep import site_folds
@@ -38,7 +38,7 @@ def main(tag="resnet18", out_tag="resnet18_d4", arch="resnet18"):
     L = gpd.read_parquet(os.path.join(T.ROOT, "data/labels_3857.parquet")); fo = site_folds(L[L["mod"] == T.MOD])
     S = T.load_all(); out = os.path.join(T.W_, "oof_" + out_tag); os.makedirs(out, exist_ok=True)
     for f in sorted({fo[s["region"]] for s in S}):
-        m = T.build(arch, pretrained=False); m.load_state_dict(torch.load(os.path.join(T.W_, "models", f"{tag}_f{f}_s0.pt"), map_location="cpu")); m.eval()
+        m = T.build(arch, pretrained=False); m.load_state_dict(torch.load(os.path.join(T.W_, "models", f"{tag}_f{f}_s{int(seed)}.pt"), map_location="cpu")); m.eval()
         for s in [s for s in S if fo[s["region"]] == f]:
             if os.path.exists(os.path.join(out, s["idx"] + ".npz")):
                 continue
