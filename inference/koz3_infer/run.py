@@ -80,10 +80,15 @@ def run(in_dir, t0):
         default = max([1.0] + seen)
         ratio = lambda k: spent[k] / prior[k] if prior.get(k) else default
         reserve = sum(c * ratio(n) for n, _, _, _, c in queue[i + 1:])
-        # Everything not reserved for later jobs is this job's to use: under no pressure that is far more than it
-        # needs (experts run at full quality); under pressure the experts' own deadline checks degrade gracefully.
-        job_deadline = min(deadline, max(deadline - reserve, now + 0.3 * cost * ratio(name)))
-        if job_deadline < deadline - 1:
+        predicted = cost * ratio(name) + reserve
+        # Preserve the deployed full-quality path byte for byte while all remaining work fits.  Reserve deadlines
+        # only after measured speed shows real pressure; otherwise a harmless prior reserve can trigger an expert's
+        # own quality degradation even with many minutes of slack.
+        if predicted <= deadline - now:
+            job_deadline = deadline
+        else:
+            job_deadline = min(deadline, max(deadline - reserve, now + 0.3 * cost * ratio(name)))
+        if predicted > deadline - now and job_deadline < deadline - 1:
             log(f"time pressure: {name} on {region.name} gets {job_deadline - now:.0f}s ({reserve:.0f}s reserved)")
         ts = time.time()
         try:
