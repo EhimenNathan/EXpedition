@@ -305,3 +305,27 @@ No satellite kurgan label lies inside a satellite hillfort label. The satellite 
 the test drops satellite kurgan predictions within ρ · 54 m (radius of the median satellite hillfort, 9,206 m²) of an
 emitted hillfort point, ρ nested over folds, and prints the ceiling from the true hillfort polygons. Companion to the
 LiDAR version (`scripts/li_hillfort_kurgan_mask_oof.py`).
+
+## Satellite hillfort localisation with DINOv3-SAT patch probes (CPU, 27 Oct)
+
+Problem: the emitted satellite hillfort point (scene centre, then snap) lands inside the hillfort in only 20 of 55
+hillfort scenes (centre token 0.364); hillforts cover 0.5–6 % of a ~1 km screenshot and lie 30–100 m off-centre.
+
+Method (experiments/claude/sp_hillfort_dinov3_tokens.py → _loc.py → _eval.py): frozen DINOv3-SAT ViT-L/16 tokens of the
+whole scene (512 and 768 px, identity + h-flip, bf16 CPU ~1–2.5 s per scene), label = token centre inside a satellite
+hillfort; PCA (fitted on training folds) + L2 logistic, out of fold over koz3.sp_prep.site_folds (20 km clusters);
+Gaussian-smoothed map, argmax = point. HIT = point inside the true hillfort (55 scenes, 49 regions).
+
+| localiser | hit |
+|---|---:|
+| scene centre (deployed fallback) | 0.364 |
+| position prior only | 0.345 |
+| 512 px, nested setting (PCA 64, C 0.005 chosen in 4/4 folds) | **0.673** |
+| 768 px, nested | 0.600 |
+| 512 + 768 multi-scale fixed ensemble (no selection) | **0.691** |
+| every probe setting tested (PCA 32–256, C, σ) | 0.40–0.69; LightGBM heads worse (0.36–0.60) |
+
+Positional prior adds nothing on top of the probe. Inference: koz3/hf_dino_loc.py + models/hf_dino_loc.npz (1 MB),
+parity with the out-of-fold path exact. Pipeline test (official metric, nested, robust): scripts/sp_hillfort_dinov3_loc_oof.py
+with the out-of-fold points experiments/claude/outputs/hf_dinov3_loc_points_oof.csv. Deployment cost: DINOv3 ViT-L
+backbone (~0.6 GB fp16) in the archive; GPU time negligible.
