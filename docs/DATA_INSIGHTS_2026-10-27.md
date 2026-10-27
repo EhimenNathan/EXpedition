@@ -299,3 +299,9 @@ median 9.5 m; satellite median 41.5 m (40 % isolated beyond 50 m). The deployed 
 max-pool kernel 11 px at 0.5 m) suppresses within ±2.5 m, below the closest real spacing; a synthetic check confirms
 two mounds 4 m apart both survive while a large mound stays one peak. (A first estimate treated the kernel size as the
 radius and claimed 11 % unreachable mounds; that was wrong and the adaptive-NMS test was withdrawn.)
+
+### D. Organiser hillfort rule for satellite (`scripts/sp_hillfort_kurgan_mask_oof.py`)
+No satellite kurgan label lies inside a satellite hillfort label. The satellite pipeline emits hillforts as points, so
+the test drops satellite kurgan predictions within ρ · 54 m (radius of the median satellite hillfort, 9,206 m²) of an
+emitted hillfort point, ρ nested over folds, and prints the ceiling from the true hillfort polygons. Companion to the
+LiDAR version (`scripts/li_hillfort_kurgan_mask_oof.py`).
