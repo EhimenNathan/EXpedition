@@ -40,6 +40,8 @@ def main(tag="resnet18", out_tag="resnet18_d4", arch="resnet18"):
     for f in sorted({fo[s["region"]] for s in S}):
         m = T.build(arch, pretrained=False); m.load_state_dict(torch.load(os.path.join(T.W_, "models", f"{tag}_f{f}_s0.pt"), map_location="cpu")); m.eval()
         for s in [s for s in S if fo[s["region"]] == f]:
+            if os.path.exists(os.path.join(out, s["idx"] + ".npz")):
+                continue
             p = predict_d4(m, s["img"], s["valid"]); Tg = Affine(*s["T"]) * Affine.scale(T.STRIDE, T.STRIDE)
             np.savez_compressed(os.path.join(out, s["idx"] + ".npz"), p=p.astype(np.float16), T=np.array(Tg[:6]), crs=s["crs"],
                                 valid=np.array(p.shape[1:]), region=s["region"], tif=s["tif"])

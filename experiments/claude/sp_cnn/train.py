@@ -216,10 +216,19 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
         tr = [S[i] for i in range(len(S)) if fold[i] != f]; rng = np.random.default_rng(seed * 100 + f + 1)
         lr = float(os.environ.get("CNN_LR", 2e-4 if arch == "satlas_swinb" else 5e-4))
         bs = int(os.environ.get("CNN_BS", 12))
-        model = build(arch).to(DEV); opt = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
+        final = os.path.join(W_, "models", f"{tag}_f{f}_s{seed}.pt"); ck = final.replace(".pt", "_ckpt.pt")
+        model = build(arch, pretrained=not os.path.exists(final)).to(DEV); opt = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
         sched = torch.optim.lr_scheduler.OneCycleLR(opt, lr, total_steps=int(iters), pct_start=0.1)
-        t0 = time.time(); model.train()
-        for it in range(int(iters)):
+        t0 = time.time(); start = 0
+        if os.path.exists(final):                                          # finished earlier: only (re)predict missing scenes
+            model.load_state_dict(torch.load(final, map_location=DEV)); start = int(iters)
+        elif os.path.exists(ck):                                           # resume after a container restart
+            c = torch.load(ck, map_location=DEV, weights_only=False)
+            model.load_state_dict(c["model"]); opt.load_state_dict(c["opt"]); sched.load_state_dict(c["sched"])
+            rng.bit_generator.state = c["rng"]; torch.set_rng_state(c["torch_rng"]); start = c["it"]
+            print(f"  fold {f} resumed at it {start}", flush=True)
+        model.train()
+        for it in range(start, int(iters)):
             X, Y, M, V = (torch.from_numpy(a).to(DEV) for a in sample(tr, rng, bs))
             with torch.autocast(DEV, dtype=torch.bfloat16):                # bf16 (CPU AMX ~2.7× faster; GPU autocast)
                 out = model(X.float())
@@ -227,13 +236,26 @@ def main(iters=3000, folds="0,1,2,3,-1", arch="resnet18", seed=0):
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
             if it % 200 == 0:
                 print(f"  fold {f} it {it} loss {loss.item():.3f} {time.time() - t0:.0f}s", flush=True)
-        model.eval(); torch.save(model.state_dict(), os.path.join(W_, "models", f"{tag}_f{f}_s{seed}.pt"))
+            if (it + 1) % 250 == 0 and it + 1 < int(iters):
+                torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), it=it + 1,
+                                rng=rng.bit_generator.state, torch_rng=torch.get_rng_state()), ck + ".tmp")
+                os.replace(ck + ".tmp", ck)
+        model.eval()
+        if not os.path.exists(final):
+            torch.save(model.state_dict(), final + ".tmp"); os.replace(final + ".tmp", final)
+            if os.path.exists(ck):
+                os.remove(ck)
         if f >= 0:
             for i in np.flatnonzero(fold == f):
-                s = S[i]; p = predict_scene(model, s["img"], s["valid"])
+                s = S[i]
+                if os.path.exists(os.path.join(W_, "oof_" + tag, s["idx"] + ".npz")):
+                    continue
+                p = predict_scene(model, s["img"], s["valid"])
                 T = Affine(*s["T"]) * Affine.scale(STRIDE, STRIDE)
-                np.savez_compressed(os.path.join(W_, "oof_" + tag, s["idx"] + ".npz"), p=p.astype(np.float16), T=np.array(T[:6]),
+                dst = os.path.join(W_, "oof_" + tag, s["idx"] + ".npz")
+                np.savez_compressed(dst + ".tmp.npz", p=p.astype(np.float16), T=np.array(T[:6]),
                                     crs=s["crs"], valid=np.array(p.shape[1:]), region=s["region"], tif=s["tif"])
+                os.replace(dst + ".tmp.npz", dst)
         print(f"fold {f} done {time.time() - t0:.0f}s", flush=True)
 
 
