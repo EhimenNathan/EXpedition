@@ -24,7 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from li_dome_detector import candidates  # noqa: E402
 
-D = os.environ.get("KOZ3_RAW", "data"); OUT = os.environ.get("KOZ3_OUT", "work/li_dome"); R = 0.5
+_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+D = os.environ.get("KOZ3_RAW", os.path.join(_ROOT, "data", "train-expds-3"))         # team layout (koz3.labels.DATA)
+OUT = os.environ.get("KOZ3_OUT", os.path.join(_ROOT, "work", "li_dome")); R = 0.5
 NPROC = os.cpu_count()
 FAMILIES = {
     "base": ["h", "snr", "sym", "rad", "l2", "rough", "dens"],
@@ -35,6 +37,21 @@ FAMILIES = {
     "symcv": ["cv5", "cv10"],
     "pcurv": ["plan_c", "prof_c"],
 }
+
+
+def load_dtm(reg):
+    """0.5 m DTM: our stream cache (li_stream_dtm.py) or the team's 0.25 m prep (data/las_prep), block-averaged."""
+    f = f"{OUT}/dtm/{reg}.npz"
+    if os.path.exists(f):
+        z = np.load(f); return z["d"], z["v"], *z["origin"][:2]
+    from koz3 import dtm as dtm_mod
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    d, v, (x0, y1, res), _ = dtm_mod.load(os.path.join(root, "data", "las_prep", reg + ".npz"))
+    k = int(round(R / res))
+    if k > 1:
+        H, W = (d.shape[0] // k) * k, (d.shape[1] // k) * k
+        d = d[:H, :W].reshape(H // k, k, W // k, k).mean((1, 3)); v = v[:H, :W].reshape(H // k, k, W // k, k).all((1, 3))
+    return d.astype(np.float32), v, x0, y1
 
 
 def crs_of(f):
@@ -50,7 +67,7 @@ def site(reg):
     from shapely.ops import transform as stf, unary_union
     from shapely.strtree import STRtree
     from pyproj import Transformer
-    z = np.load(f"{OUT}/dtm/{reg}.npz"); d, v = z["d"], z["v"]; x0, y1, _ = z["origin"]
+    d, v, x0, y1 = load_dtm(reg)
     utm = "EPSG:" + json.load(open(f"{D}/{reg}/UTM.json"))["crs"].split(":")[-1]
     kur, allp = [], []
     for f in glob.glob(f"{D}/{reg}/*/*_Li_*.geojson"):
@@ -176,7 +193,7 @@ def ablation(D_, cols, name, hardneg=False):
 
 def main():
     from multiprocessing import Pool
-    regs = sorted(os.path.basename(f)[:-4] for f in glob.glob(f"{OUT}/dtm/*.npz"))
+    regs = sorted({os.path.basename(f)[:-4] for f in glob.glob(f"{OUT}/dtm/*.npz") + glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "las_prep", "*.npz"))})
     with Pool(min(3, NPROC)) as p:
         parts = p.map(site, regs)
     D_ = pd.concat([q for q in parts if len(q)], ignore_index=True)

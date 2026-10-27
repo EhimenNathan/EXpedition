@@ -164,3 +164,35 @@ leave-one-site-out on 13 sites, ranks candidates with AUC 0.877 (raw SNR 0.637);
 Not a replacement (CNN blend ≈ 0.57) but independent evidence that is strong exactly where the CNN is weak. Decisive
 test: `scripts/li_dome_fusion_oof.py` adds ranked candidates only where the deployed CNN blend has no kurgan within
 `gap` m, nested over the LiDAR folds with per-fold and per-site robust acceptance.
+
+## LiDAR dome ranker on all 59 sites (`experiments/claude/li_dome_features.py`)
+
+All 59 training clouds streamed to 0.5 m DTMs (`li_stream_dtm.py`); 45,728 candidates in labelled zones, 2,239 inside
+kurgan labels. Leave-one-site-out LightGBM, thresholds chosen on the other sites with the official F1 (0.5·FP).
+
+Label noise was the first-order problem: counting every candidate inside a kurgan polygon as positive (226 candidates
+inside 8 giant ploughed mounds at 186) gave AUC 0.549. One positive per mound (the in-label candidate deepest inside
+the polygon; other in-label candidates excluded from training, still scored as the metric does) fixed it:
+
+| features (one positive per mound) | AUC pooled / per site | pooled F1 | TP / FP / FN |
+|---|---|---:|---|
+| base (relief, SNR, symmetry share, radius, fine relief, site roughness / clutter) | 0.764 / 0.768 | 0.291 | 578 / 2489 / 1575 |
+| + multi-scale relief (σ 1–20 m, MSRM) | 0.785 / 0.821 | 0.293 | |
+| + local dominance | 0.785 / 0.775 | 0.281 | |
+| + robber-pit | 0.774 / 0.769 | 0.276 | |
+| + Laplacian curvature | 0.781 / 0.767 | 0.301 | |
+| + site-normalised ranks / z | 0.803 / 0.780 | 0.294 | |
+| + neighbourhood (cemetery density, spacing) | 0.825 / 0.788 | 0.297 | |
+| + radial symmetry CV (5 / 10 m) | 0.841 / 0.847 | 0.371 | 715 / 1964 / 1438 |
+| + plan / profile curvature | 0.886 / 0.880 | 0.383 | 747 / 1995 / 1406 |
+| **all families** | **0.917 / 0.900** | **0.441** | **876 / 1890 / 1277** |
+| all + hard negatives only (snr ≥ 3) | 0.923 / 0.924 | 0.198 | 998 / 13877 / 1155 — rejected (calibration lost) |
+
+Per-site F1, base → all families (sites with ≥ 20 kurgans): 011 Erentuna 0.000 → 0.580 (CNN 0.341), 101 Dneprovskaya
+0.032 → 0.391, 181 Lesnaya-3 0.000 → 0.437, 104 Shetnevo 0.595 → 0.894, 013 Nora-Vinnon 0.336 → 0.571,
+190 Muravlevo 0.388 → 0.643, 036 Timerevo 0.321 → 0.403, 017 Yushkovo 0.805 → 0.894, 179/180 Lesnaya 0.60/0.46 →
+0.74/0.58, 102 Zaolshanskaya 0.068 → 0.176, 021 Novenkoe 0.263 → 0.203.
+
+Symmetry CV and plan/profile curvature (suggested in review) are the strongest single additions. The ranker is a
+CPU-only, physics-feature model, independent of the CNN, and alone beats the CNN on Erentuna. Decisive next test:
+`scripts/li_dome_fusion_oof.py` (rescue where the deployed CNN is silent; nested over LiDAR folds; robust acceptance).

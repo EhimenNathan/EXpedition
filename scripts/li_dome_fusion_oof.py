@@ -1,14 +1,16 @@
 """LiDAR physics-dome rescue fused into the deployed CNN blend, nested + robust (decisive test for
 experiments/claude/li_dome_detector.py).
 
-Evidence so far (13 sites, leave-site-out, CPU): physical dome candidates (σ=5 m local-relief maxima, radial symmetry,
-half-height radius) ranked by a LightGBM on physical features reach AUC 0.877 and pooled kurgan F1 0.430 alone; on
-CNN-weak sites alone they match or beat the CNN (021 Novenkoe F1 0.447, 036 Timerevo 0.486, 011 Erentuna 56/69
-found). Here they rescue only where the deployed CNN blend has no kurgan within `gap` metres.
+Evidence (59 sites, leave-site-out, CPU; experiments/claude/li_dome_features.py): physical dome candidates ranked by
+a LightGBM on physical features (multi-scale relief, symmetry CV, plan/profile curvature, site-normalised and
+neighbourhood features; one positive per mound) reach per-site AUC 0.900 and pooled kurgan F1 0.441 alone; on the
+CNN's blindest site 011 Erentuna F1 0.580 alone (CNN 0.341). Here they rescue only where the deployed CNN blend has no
+kurgan within `gap` metres.
 
 Steps (no GPU):
-1. candidates for every LiDAR site from data/las_prep/<region>.npz (DTM → 0.5 m), cached in work/li_dome/;
-2. physical ranker trained per LiDAR fold on the other folds (labels: candidate inside a kurgan label);
+1. candidates + features for every LiDAR site (li_dome_features.site; DTM from data/las_prep/<region>.npz → 0.5 m),
+   cached in work/li_dome/feat/;
+2. ranker trained per LiDAR fold on the other folds (one positive per mound, other in-label candidates excluded);
 3. deployed CNN blend decoded exactly as deployed (thr 0.15, dual 0.05, comp 0.5, neighbourhood prior);
 4. rescue: add candidates with ranker p ≥ t and no CNN kurgan within gap m, as damaged kurgans (confidence α·p;
    optional intact twin at 0.99·α·p, as the deployed dual hedge does);
@@ -27,29 +29,6 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts")); sys.path.insert(0, os.path.join(ROOT, "experiments", "claude"))
 DEFAULT = "ens:work/li/oof_ens.pkl.zst+work/li/oof_aug.pkl.zst+work/li/oof_augx.pkl.zst"
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
-FEATS = ["h", "snr", "sym", "rad", "l2", "rough", "dens"]
-R = 0.5
-
-
-def site_candidates(region, cache_dir):
-    """Dome candidates (UTM x, y + physical features) from the prepared DTM; cached."""
-    from scipy import ndimage as ndi
-    from koz3 import dtm as dtm_mod
-    from li_dome_detector import candidates
-    f = os.path.join(cache_dir, region + ".parquet")
-    if os.path.exists(f):
-        return pd.read_parquet(f)
-    d, v, (x0, ytop, res), crs = dtm_mod.load(os.path.join(ROOT, "data", "las_prep", region + ".npz"))
-    k = int(round(R / res))
-    if k > 1:                                                   # 0.25 m → 0.5 m block mean
-        H, W = (d.shape[0] // k) * k, (d.shape[1] // k) * k
-        d = d[:H, :W].reshape(H // k, k, W // k, k).mean((1, 3)); v = v[:H, :W].reshape(H // k, k, W // k, k).all((1, 3))
-    C, rough, area = candidates(d.astype(np.float32), v)
-    df = pd.DataFrame(C, columns=["px", "py", "h", "snr", "sym", "rad", "l2"])
-    df["x"] = x0 + (df.px + 0.5) * R; df["y"] = ytop - (df.py + 0.5) * R
-    df["rough"] = rough; df["dens"] = (df.snr >= 5).sum() / max(area, 1e-6); df["region"] = region; df["crs"] = crs
-    os.makedirs(cache_dir, exist_ok=True); df.to_parquet(f)
-    return df
 
 
 def main(spec=DEFAULT):
@@ -66,25 +45,26 @@ def main(spec=DEFAULT):
     P = lc.load(spec)
     sites = sorted(r for r in P if os.path.exists(os.path.join(ROOT, "data", "las_prep", r + ".npz")))
     fold = {r: items[r]["fold"] for r in sites}; folds = sorted(set(fold.values()))
-    cache = os.path.join(ROOT, "work", "li_dome")
-    C = pd.concat([site_candidates(r, cache) for r in sites], ignore_index=True)
-    # labels per candidate (inside a kurgan label of its own site), in the site's UTM CRS
-    C["y_"] = 0
-    for r in sites:
-        lab = L[(L.region == r) & L.class_name.isin(K)]
-        if not len(lab):
-            continue
-        m = C.region == r; crs = C.loc[m, "crs"].iloc[0]
-        polys = list(lab.to_crs(crs).geometry); tree = STRtree(polys)
-        C.loc[m, "y_"] = [int(any(polys[j].contains(Point(x, y)) for j in tree.query(Point(x, y))))
-                          for x, y in zip(C.loc[m, "x"], C.loc[m, "y"])]
+    import li_dome_features as LF
+    from multiprocessing import Pool
+    with Pool(3) as pool:
+        parts = pool.map(LF.site, sites)
+    C = pd.concat([q for q in parts if len(q)], ignore_index=True)
+    sites = sorted(set(C.region) & set(sites))
+    import json as _json
+    C["crs"] = C.region.map(lambda r: "EPSG:" + _json.load(open(os.path.join(LF.D, r, "UTM.json")))["crs"].split(":")[-1])
+    FEATS = sum(LF.FAMILIES.values(), [])
+    best = C[C.hit >= 0].sort_values("depth", ascending=False).groupby(["region", "hit"]).head(1).index
+    C["y_"] = 0; C.loc[best, "y_"] = 1
+    train_ok = (C.hit < 0) | C.index.isin(best)          # other candidates inside a mound: not trained on
     C["fold"] = C.region.map(fold); C["p"] = 0.0
     for f in folds:
-        tr = C.fold != f
-        m = lgb.LGBMClassifier(n_estimators=300, learning_rate=0.03, num_leaves=15, min_child_samples=40,
-                               subsample=0.8, subsample_freq=1, verbose=-1).fit(C.loc[tr, FEATS], C.loc[tr, "y_"])
-        C.loc[~tr, "p"] = m.predict_proba(C.loc[~tr, FEATS])[:, 1]
-    print(f"{len(sites)} sites, {len(C)} candidates, {int(C.y_.sum())} inside kurgan labels", flush=True)
+        tr = (C.fold != f) & train_ok
+        m = lgb.LGBMClassifier(n_estimators=400, learning_rate=0.03, num_leaves=15, min_child_samples=40, subsample=0.8,
+                               subsample_freq=1, colsample_bytree=0.8, verbose=-1).fit(C.loc[tr, FEATS], C.loc[tr, "y_"])
+        te = C.fold == f
+        C.loc[te, "p"] = m.predict_proba(C.loc[te, FEATS])[:, 1]
+    print(f"{len(sites)} sites, {len(C)} candidates, {int(C.y_.sum())} mound positives", flush=True)
     to3857 = {}
     for r in sites:
         m = C.region == r; crs = C.loc[m, "crs"].iloc[0]
