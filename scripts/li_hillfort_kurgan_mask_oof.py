@@ -27,11 +27,63 @@ DEFAULT = "ens:work/li/oof_ens.pkl.zst+work/li/oof_aug.pkl.zst+work/li/oof_augx.
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
 
 
-def main(spec=DEFAULT):
+def hillfort_mask(prob_gor, valid, m, d_m, res, min_px=600):
+    """Predicted hillfort extent exactly as decode_site_v2 builds hillfort components (comp_feats: (prob > m) & valid,
+    8-connected, ≥ min_px pixels), optionally dilated by d_m metres."""
     from scipy import ndimage as ndi
+    pm = (prob_gor > m) & valid
+    lab, n = ndi.label(pm, structure=np.ones((3, 3), bool))
+    if n:
+        sizes = ndi.sum(pm, lab, np.arange(1, n + 1))
+        pm = np.isin(lab, np.flatnonzero(sizes >= min_px) + 1)
+    if d_m > 0 and pm.any():
+        pm = ndi.binary_dilation(pm, iterations=max(1, int(round(d_m / res))))
+    return pm
+
+
+def kurgan_pixels(feats, meta):
+    """(index, row, col) of every kurgan feature's centroid on the probability grid (inverse of comp_feats' mapping
+    X = x0 + col·res, Y = ytop − row·res)."""
+    from shapely.geometry import shape
+    from pyproj import Transformer
+    tr = Transformer.from_crs(3857, meta["crs"], always_xy=True).transform
+    out = []
+    for i, f in enumerate(feats):
+        if f["properties"]["class_name"] in K:
+            c = shape(f["geometry"]).centroid; x, y = tr(c.x, c.y)
+            out.append((i, int(np.floor((meta["ytop"] - y) / meta["res"])), int(np.floor((x - meta["x0"]) / meta["res"]))))
+    return out
+
+
+def self_test():
+    """Synthetic check against the deployed comp_feats: one hillfort blob and kurgans inside / outside it."""
+    from koz3.li_train import comp_feats
+    from shapely.geometry import Point, mapping
+    from pyproj import Transformer
+    meta = {"x0": 500000.0, "ytop": 6000000.0, "res": 0.5, "crs": "EPSG:32636", "region": "synthetic"}
+    H = W = 200; yy, xx = np.mgrid[0:H, 0:W]
+    prob = np.where((yy - 100) ** 2 + (xx - 100) ** 2 < 40 ** 2, 0.9, 0.05).astype(np.float32)   # hillfort r = 20 m
+    valid = np.ones((H, W), bool)
+    hf = comp_feats(prob, valid, meta, "gorodishcha", 0.5, 600)
+    assert len(hf) == 1, hf
+    to3857 = Transformer.from_crs(meta["crs"], 3857, always_xy=True).transform
+    def feat(col, row, cls):
+        X, Y = to3857(meta["x0"] + (col + 0.5) * meta["res"], meta["ytop"] - (row + 0.5) * meta["res"])
+        return {"type": "Feature", "geometry": mapping(Point(X, Y).buffer(1.5)), "properties": {"class_name": cls}}
+    feats = [feat(100, 100, K[0]), feat(130, 100, K[1]), feat(170, 100, K[0]), feat(100, 100, "gorodishcha")]
+    pm = hillfort_mask(prob, valid, 0.5, 0.0, meta["res"])
+    drop = {i for i, r, c in kurgan_pixels(feats, meta) if pm[r, c]}
+    assert drop == {0, 1}, drop                                    # centre and inner kurgans dropped, outside one kept
+    pm10 = hillfort_mask(prob, valid, 0.5, 10.0, meta["res"])     # 20 m + 10 m margin: x=170 px is 35 m away → kept
+    assert {i for i, r, c in kurgan_pixels(feats, meta) if pm10[r, c]} == {0, 1}
+    pm_small = hillfort_mask(prob, valid, 0.5, 0.0, meta["res"], min_px=10 ** 6)                 # size filter
+    assert not pm_small.any()
+    print("self-test PASS: mask matches comp_feats' component, drops kurgans inside only, size filter and margin behave")
+
+
+def main(spec=DEFAULT):
     from shapely.geometry import shape
     from shapely.ops import unary_union
-    from pyproj import Transformer
     from koz3.li_train import labels, site_items, decode_site_v2, CLS, N_HM
     from koz3.labels import to_gt_geojson
     from koz3.nested import fold_counts, nested, weighted, _add_all
@@ -40,33 +92,18 @@ def main(spec=DEFAULT):
     L = labels(); items = {it["region"]: it for it in site_items(L)}
     P = lc.load(spec)
     sites = sorted(P); fold = {r: items[r]["fold"] for r in sites}; folds = sorted(set(fold.values()))
-    gor_min_px = 600
-    base, cent, gmask = {}, {}, {}
+    base, cent, gprob = {}, {}, {}
     for r in sites:
         it = items[r]; meta = dict(it["meta"], region=r); p = P[r].astype(np.float32)
         base[r] = decode_site_v2(p, it["valid"], meta, thr=0.15, dual=0.05, comp_thr=0.5, prior={"R": 200.0, "K": 3, "snb": 0.2})
-        tr = Transformer.from_crs(3857, meta["crs"], always_xy=True).transform
-        rc = []
-        for i, f in enumerate(base[r]):
-            if f["properties"]["class_name"] in K:
-                c = shape(f["geometry"]).centroid; x, y = tr(c.x, c.y)
-                rc.append((i, int((meta["ytop"] - y) / meta["res"]), int((x - meta["x0"]) / meta["res"])))
-        cent[r] = rc
-        gmask[r] = p[N_HM + CLS.index("gorodishcha")]
+        cent[r] = kurgan_pixels(base[r], meta)
+        gprob[r] = p[N_HM + CLS.index("gorodishcha")]
     H, W = {}, {}
 
     def predicted_mask(r, m, d):
-        key = (r, m, d)
-        if key not in H:
-            pm = gmask[r] >= m
-            lab, n = ndi.label(pm)
-            if n:
-                sizes = ndi.sum(pm, lab, np.arange(1, n + 1)); keep = np.flatnonzero(sizes >= gor_min_px) + 1
-                pm = np.isin(lab, keep)
-            if d > 0 and pm.any():
-                pm = ndi.binary_dilation(pm, iterations=max(1, int(round(d / items[r]["meta"]["res"]))))
-            H[key] = pm
-        return H[key]
+        if (r, m, d) not in H:
+            H[(r, m, d)] = hillfort_mask(gprob[r], items[r]["valid"], m, d, items[r]["meta"]["res"])
+        return H[(r, m, d)]
 
     def oracle_mask(r):
         if r not in W:
@@ -109,4 +146,8 @@ def main(spec=DEFAULT):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:2])
+    if sys.argv[1:2] == ["--self-test"]:
+        self_test()
+    else:
+        self_test()
+        main(*sys.argv[1:2])

@@ -18,8 +18,39 @@ import pandas as pd
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts"))
 NAMES = ("dfine", "rtdetr", "hm", "dfnodn", "balq", "balq3")
+K = ("kurgany_povrezhdennye", "kurgany_tselye")
 RHOS = (0.0, 0.5, 0.75, 1.0, 1.5)
 R_HILLFORT = 54.0
+
+
+def near_hillfort(G, radius_m):
+    """Boolean mask of kurgan rows within radius_m ground metres of a hillfort row of the same region
+    (EPSG:3857 distances are scaled by 1/cos(latitude))."""
+    drop = np.zeros(len(G), bool)
+    kurg = G.cls.isin(K).values
+    for r, h in G[G.cls == "gorodishcha"].groupby("region"):
+        m = (G.region.values == r) & kurg
+        if m.any():
+            d = np.hypot(G.x.values[m][:, None] - h.x.values[None], G.y.values[m][:, None] - h.y.values[None]).min(1)
+            kk = 1 / np.cos(np.radians(np.degrees(2 * np.arctan(np.exp(G.y.values[m] / 6378137.0)) - np.pi / 2)))
+            drop[np.flatnonzero(m)[d < radius_m * kk]] = True
+    return drop
+
+
+def self_test():
+    """At 55° N a 50 m ground distance is ≈ 87 m in EPSG:3857: kurgans 40 m and 60 m (ground) from a hillfort point with
+    a 54 m radius must be dropped and kept respectively; other regions and non-kurgan classes are untouched."""
+    from pyproj import Transformer
+    tr = Transformer.from_crs(4326, 3857, always_xy=True).transform
+    lat = 55.0; m_per_deg = 111320 * np.cos(np.radians(lat))
+    pts = [("A", "gorodishcha", 0.0), ("A", K[0], 40.0), ("A", K[1], 60.0), ("A", "arkhitektury", 10.0), ("B", K[0], 10.0)]
+    rows = []
+    for reg, cls, east_m in pts:
+        x, y = tr(37.0 + east_m / m_per_deg, lat); rows.append((reg, cls, 0.5, x, y))
+    G = pd.DataFrame(rows, columns=["region", "cls", "score", "x", "y"])
+    assert list(near_hillfort(G, 54.0)) == [False, True, False, False, False], list(near_hillfort(G, 54.0))
+    assert not near_hillfort(G, 0.0).any()
+    print("self-test PASS: ground-metre radius at 55° N, same-region kurgans only")
 
 
 def main():
@@ -75,13 +106,7 @@ def main():
             return G[~drop]
         if rho == 0.0:
             return G
-        hf = G[G.cls == "gorodishcha"]; drop = np.zeros(len(G), bool)
-        for r, h in hf.groupby("region"):
-            m = (G.region.values == r) & kurg
-            if m.any():
-                d = np.hypot(G.x.values[m][:, None] - h.x.values[None], G.y.values[m][:, None] - h.y.values[None]).min(1)
-                kk = 1 / np.cos(np.radians(np.degrees(2 * np.arctan(np.exp(G.y.values[m] / 6378137.0)) - np.pi / 2)))
-                drop[np.flatnonzero(m)[d < rho * R_HILLFORT * kk]] = True
+        drop = near_hillfort(G, rho * R_HILLFORT)
         return G[~drop]
 
     folds = sorted({RF[r] for r in regions})
@@ -106,4 +131,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    self_test()
+    if sys.argv[1:2] != ["--self-test"]:
+        main()
