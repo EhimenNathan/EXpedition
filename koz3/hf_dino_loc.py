@@ -69,7 +69,27 @@ class Localiser:
         tok = os.environ.get("HF_TOKEN")
         proc = AutoImageProcessor.from_pretrained(backbone, token=tok)
         self.mean = np.array(proc.image_mean, np.float32); self.std = np.array(proc.image_std, np.float32)
-        self.model = AutoModel.from_pretrained(backbone, token=tok, dtype=torch.float32).to(device).eval()
+        q8 = sorted(__import__("glob").glob(os.path.join(backbone, "*.q8.safetensors"))) if os.path.isdir(backbone) else []
+        if q8:                                          # int8-packed weights (make_v23_from_v22.py --int8): dequantise into a
+            import shutil, tempfile                     # temporary standard checkpoint so from_pretrained applies its usual
+            from safetensors.torch import load_file, save_file   # key mapping (transformers 5 renames keys on save)
+            tmp = tempfile.mkdtemp(prefix="dino_q8_")
+            for f in os.listdir(backbone):
+                if f.endswith(".json"):
+                    shutil.copy(os.path.join(backbone, f), tmp)
+            sd = {}
+            for f in q8:
+                t = load_file(f)
+                for k, v in t.items():
+                    if k.endswith(".q8"):
+                        sd[k[:-3]] = (v.float() * t[k + "scale"].float()).half()
+                    elif not k.endswith(".q8scale"):
+                        sd[k] = v
+            save_file(sd, os.path.join(tmp, "model.safetensors"))
+            self.model = AutoModel.from_pretrained(tmp, dtype=torch.float32).to(device).eval()
+            shutil.rmtree(tmp, ignore_errors=True)
+        else:
+            self.model = AutoModel.from_pretrained(backbone, token=tok, dtype=torch.float32).to(device).eval()
         self.device = device; self.crs_override = crs_override
         self.W = dict(np.load(weights))
 
