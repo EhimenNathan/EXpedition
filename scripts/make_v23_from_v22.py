@@ -109,11 +109,18 @@ def parity_only(inf_dir, n):
     for m in ("PIL", "torchvision"):
         sys.modules[m] = None
     vend = os.path.join(inf_dir, "vendor")
-    if os.path.isdir(vend):
-        sys.path.insert(0, vend)
+    vend_tf = sorted(glob.glob(os.path.join(vend, "transformers-*.dist-info")))
+    vend_ver = os.path.basename(vend_tf[-1])[len("transformers-"):-len(".dist-info")] if vend_tf else None
+    if os.path.isdir(vend) and sys.version_info[:2] == (3, 12):
+        sys.path.insert(0, vend)                        # the platform image is Python 3.12: vendor binaries load there
+        print("using the archive vendor (Python 3.12, as the platform)")
+    else:                                               # vendor binaries (regex, tokenizers, ...) are cp312: use the local
+        print(f"Python {sys.version_info[0]}.{sys.version_info[1]} ≠ 3.12: testing with the local packages; vendor transformers {vend_ver}")
     P = parity(inf_dir, n)
     import transformers
     print("transformers", transformers.__version__, "from", os.path.dirname(transformers.__file__))
+    if vend_ver and transformers.__version__ != vend_ver:
+        print(f"NOTE: local transformers {transformers.__version__} ≠ vendor {vend_ver}; the platform uses {vend_ver}")
     print("PARITY_JSON", json.dumps(P))
 
 
