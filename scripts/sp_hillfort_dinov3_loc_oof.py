@@ -27,7 +27,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts"))
 NAMES = ("dfine", "rtdetr", "hm", "dfnodn", "balq", "balq3")
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
-POINTS = os.path.join(ROOT, "experiments/claude/outputs/hf_dinov3_loc_points_oof.csv")
+POINTS = os.path.join(ROOT, os.environ.get("LOC_POINTS", "experiments/claude/outputs/hf_dinov3_loc_points_oof.csv"))
 # (point, min map max for the DINOv3 point, gate score, gate threshold); ("snap", 0, "v21", 0.1) = deployed
 SETTINGS = [("snap", 0.0, "v21", 0.1)] + [(pt, m, gs, g) for pt, m in (("snap", 0.0), ("dino", 0.0), ("dino", 0.7))
                                           for gs in ("v21", "mean3", "mean2") for g in (0.1, 0.2, 0.3, 0.4)
