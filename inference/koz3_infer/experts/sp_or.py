@@ -85,7 +85,30 @@ def _scene_gate(region, path):
     with torch.no_grad():
         p = float(np.mean([torch.sigmoid(m(x.flip(fl) if fl else x)).item() for m in _GATE["sp_scene"] for fl in ((), (-1,), (-2,))]))
     X, Y = Transformer.from_crs(crs, 3857, always_xy=True).transform(*(t * (w / 2, h / 2)))
+    dl = cfg()["sp_or"].get("dino_loc")             # DINOv3-SAT hillfort localiser: point at the predicted hillfort
+    if dl and p >= cfg()["sp_or"].get("gate_thr", 0.1):   # instead of the scene centre (nested OOF 0.3797 → 0.4097)
+        try:
+            loc = _localiser(dl)
+            if loc is not None:
+                X, Y, mx = loc(str(path), crs)
+                log(f"sp_or {path.name}: DINOv3 hillfort point (map max {mx:.3f})")
+        except Exception as e:                          # never lose the scene: keep the centre
+            log(f"sp_or {path.name}: DINOv3 localiser failed {e!r}; scene centre kept")
     return p, X, Y
+
+
+def _localiser(dl):
+    """Load once: backbone (local fp16 folder) + probe weights from inference/models/<dl['dir']>/."""
+    if "loc" not in _GATE:
+        import os
+        import torch
+        from koz3.hf_dino_loc import Localiser
+        from ..models import model_dir
+        d = model_dir(dl.get("dir", "sp_dino_loc"))
+        bb, w = os.path.join(d, "backbone"), os.path.join(d, "hf_dino_loc.npz")
+        _GATE["loc"] = Localiser(bb, w, device="cuda" if torch.cuda.is_available() else "cpu") \
+            if os.path.isdir(bb) and os.path.exists(w) else None
+    return _GATE["loc"]
 
 
 _GATE = {}
