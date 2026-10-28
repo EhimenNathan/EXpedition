@@ -1,0 +1,15 @@
+v22 /home/nathan/Expedition Competition/Codex Work/v21_robust_wt/build/koz3_submission_v22_etgr_fusion_final_20261027.zip: 0.876 GB
+Loading weights:   0%|          | 0/415 [00:00<?, ?it/s]Loading weights:  15%|█▍        | 62/415 [00:00<00:00, 610.50it/s]Loading weights:  30%|██▉       | 124/415 [00:00<00:00, 608.83it/s]Loading weights:  45%|████▍     | 186/415 [00:00<00:00, 591.34it/s]Loading weights:  61%|██████    | 254/415 [00:00<00:00, 576.30it/s]Loading weights:  78%|███████▊  | 322/415 [00:00<00:00, 602.38it/s]Loading weights:  94%|█████████▍| 390/415 [00:00<00:00, 605.33it/s]Loading weights: 100%|██████████| 415/415 [00:00<00:00, 620.11it/s]
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.42it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.42it/s]
+parity on training scenes in a PLATFORM-LIKE subprocess (no PIL / torchvision, the archive's vendor first):
+Python 3.13 ≠ 3.12: testing with the local packages; vendor transformers 5.4.0
+   015_Демидовка          point Δ    0.00 m (3857)  map-max Δ 0.0002  0.6s
+   192_КЧР                point Δ    0.00 m (3857)  map-max Δ 0.0001  0.3s
+transformers 5.4.0 from /home/nathan/anaconda3/lib/python3.13/site-packages/transformers
+PARITY_JSON [["015_\u0414\u0435\u043c\u0438\u0434\u043e\u0432\u043a\u0430", 0.0, 0.00019305944442749023, 0.5537676811218262], ["192_\u041a\u0427\u0420", 0.0, 8.147954940795898e-05, 0.2895841598510742]]
+
+scenes whose point moved > 1 m: 0/2, worst map-max Δ 0.0002, mean 0.4s/scene
+v23 /home/nathan/Expedition Competition/Codex Work/v21_robust_wt/build/koz3_submission_v26_dinov3_stack_20261029.zip: 1.438 GB (+0.562) OK
+md5 inference/main.py b3418050e2028b3806ea54186b5024d2
+md5 inference/koz3_infer/experts/sp_or.py f5cee822f7776988b729616ffcf6ba84
+md5 inference/models/config.json b0e3aaf412c6ce1baa4cdb2c84af8efe

@@ -1,0 +1,42 @@
+Loading weights:   0%|          | 0/415 [00:00<?, ?it/s]Loading weights:  97%|█████████▋| 403/415 [00:00<00:00, 3981.52it/s]Loading weights: 100%|██████████| 415/415 [00:00<00:00, 4034.95it/s]
+[    5.4s] sp_or 01_region_046A_SpOr_спутник.tif: DINOv3 hillfort map=0.995 scene=0.636 stack=0.959
+region_046A 01_region_046A_SpOr_спутник.tif RETURN (0.9999877611796061, 3100884.372683435, 7907839.85818649) sec 5.44
+[    5.7s] sp_or 02_region_046A_SpOr_спутник.tif: DINOv3 hillfort map=0.994 scene=0.775 stack=0.982
+region_046A 02_region_046A_SpOr_спутник.tif RETURN (0.9999986886978149, 3102329.4108363916, 7907042.6012234865) sec 0.27
+[    6.0s] sp_or 03_region_046A_SpOr_спутник.tif: DINOv3 hillfort map=0.960 scene=0.559 stack=0.928
+region_046A 03_region_046A_SpOr_спутник.tif RETURN (0.9999957879384359, 3102651.9657906294, 7907516.346636296) sec 0.28
+[    6.4s] sp_or 01_region_08C9_SpOr_спутник.tif: DINOv3 hillfort map=0.998 scene=0.838 stack=0.988
+region_08C9 01_region_08C9_SpOr_спутник.tif RETURN (0.999999205271403, 4718602.529086817, 5438691.145540508) sec 0.38
+region_1579 01_region_1579_SpOr_спутник.tif RETURN None sec 0.0
+[    6.7s] sp_or 01_region_4B4E_SpOr_спутник.tif: DINOv3 hillfort map=0.436 scene=0.132 stack=0.051
+region_4B4E 01_region_4B4E_SpOr_спутник.tif RETURN (3.583789739044126e-07, 8629417.679804707, 5285693.555178731) sec 0.31
+[    6.9s] sp_or 01_region_64E5_SpOr_спутник.tif: DINOv3 hillfort map=0.997 scene=0.772 stack=0.982
+region_64E5 01_region_64E5_SpOr_спутник.tif RETURN (0.999998927116394, 4727786.871043573, 5439431.476718286) sec 0.26
+[    7.3s] sp_or 01_region_65A7_SpOr_спутник.tif: DINOv3 hillfort map=0.394 scene=0.108 stack=0.044
+region_65A7 01_region_65A7_SpOr_спутник.tif RETURN (6.499330614436379e-07, 8701209.494671054, 5260990.909909054) sec 0.35
+region_7207 01_region_7207_SpOr_спутник.tif RETURN None sec 0.0
+region_8CA5 01_region_8CA5_SpOr_спутник.tif RETURN None sec 0.0
+[    7.6s] sp_or 01_region_968C_SpOr_спутник.tif: DINOv3 hillfort map=0.620 scene=0.193 stack=0.084
+region_968C 01_region_968C_SpOr_спутник.tif RETURN (9.113631070552705e-07, 8553961.591917522, 5259442.191858243) sec 0.31
+[    7.9s] sp_or 01_region_974A_SpOr_спутник.tif: DINOv3 hillfort map=0.930 scene=0.839 stack=0.984
+region_974A 01_region_974A_SpOr_спутник.tif RETURN (0.9999963839848837, 8637747.637497136, 5174873.195274212) sec 0.25
+[    8.1s] sp_or 01_region_9B2E_SpOr_спутник.tif: DINOv3 hillfort map=0.541 scene=0.133 stack=0.060
+region_9B2E 01_region_9B2E_SpOr_спутник.tif RETURN (4.0545243488547084e-07, 8592941.56835, 5174452.24225) sec 0.26
+[    8.3s] sp_or 01_region_9E9C_SpOr_спутник.tif: DINOv3 hillfort map=0.998 scene=0.867 stack=0.990
+region_9E9C 01_region_9E9C_SpOr_спутник.tif RETURN (0.9999996026357015, 4340877.48072081, 6625561.021431493) sec 0.22
+region_9E9C 02_region_9E9C_SpOr_спутник.tif RETURN None sec 0.0
+[    8.7s] sp_or 01_region_D043_SpOr_спутник.tif: DINOv3 hillfort map=0.968 scene=0.837 stack=0.986
+region_D043 01_region_D043_SpOr_спутник.tif RETURN (0.9999946753184, 4728961.039582812, 5422944.380881404) sec 0.38
+[    9.0s] sp_or 01_region_DE78_SpOr_спутник.tif: DINOv3 hillfort map=0.479 scene=0.132 stack=0.054
+region_DE78 01_region_DE78_SpOr_спутник.tif RETURN (7.102623271748598e-07, 8557307.684588939, 5257320.087851062) sec 0.3
+region_DE78 02_region_DE78_SpOr_спутник.tif RETURN None sec 0.0
+[    9.3s] sp_or 01_region_E7A1_SpOr_спутник.tif: DINOv3 hillfort map=0.983 scene=0.739 stack=0.976
+region_E7A1 01_region_E7A1_SpOr_спутник.tif RETURN (0.999722441037496, 4319927.605763353, 5627245.978672463) sec 0.25
+[    9.6s] sp_or 01_region_E864_SpOr_спутник.tif: DINOv3 hillfort map=0.281 scene=0.141 stack=0.041
+region_E864 01_region_E864_SpOr_спутник.tif RETURN (0.004200452004927986, 4922452.2264284445, 5827859.315520965) sec 0.33
+[    9.9s] sp_or 02_region_E864_SpOr_спутник.tif: DINOv3 hillfort map=0.698 scene=0.252 stack=0.191
+region_E864 02_region_E864_SpOr_спутник.tif RETURN (0.29012084069351357, 4924280.083088944, 5826501.075091385) sec 0.3
+region_E864 03_region_E864_SpOr_спутник.tif RETURN None sec 0.0
+region_E864 04_region_E864_SpOr_спутник.tif RETURN None sec 0.0
+[   10.2s] sp_or 01_region_FCE9_SpOr_спутник.tif: DINOv3 hillfort map=0.786 scene=0.188 stack=0.107
+region_FCE9 01_region_FCE9_SpOr_спутник.tif RETURN (2.6235349347795514e-06, 8727246.781958932, 5277669.470505945) sec 0.27

@@ -26,7 +26,12 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts"))
 NAMES = ("dfine", "rtdetr", "hm", "dfnodn", "balq", "balq3")
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
-SETTINGS = [(g, scope, tau) for g in (0.1, 0.3, 0.5) for scope in ("small", "all") for tau in (0.5, np.inf)]
+# (gate g, scope, keep kurgans with score ≥ tau, protect scenes with ≥ nprot kurgan detections of score ≥ 0.5).
+# Protection targets the labelled exceptions (055 Kurmentu, 185 Izborsk: dozens of kurgans in hillfort screenshots),
+# whose loss made fold 0 regress in the 28 Oct run (fixed best (0.1, all, inf) +0.018, nested −0.0023).
+SETTINGS = [(g, scope, tau, n) for g in (0.1, 0.3) for scope in ("small", "all") for tau in (0.5, np.inf)
+            for n in (np.inf, 10, 5, 3)]
+PROTECT_SCORE = 0.5
 
 
 def scene_table(Sg, geom):
@@ -40,21 +45,22 @@ def scene_table(Sg, geom):
     return pd.DataFrame(rows, columns=["region", "cx", "cy", "half", "small", "p"])
 
 
-def scene_gate_drop(G, T, g, scope, tau):
+def scene_gate_drop(G, T, g, scope, tau, nprot=np.inf):
     """Boolean mask over G rows: kurgans with score < tau whose own scene (row of T) has p ≥ g (and is small for
-    scope "small")."""
+    scope "small"), unless that scene holds ≥ nprot kurgan predictions with score ≥ PROTECT_SCORE (a kurgan site)."""
     drop = np.zeros(len(G), bool)
-    kurg = G.cls.isin(K).values & (G.score.values < tau)
+    kall = G.cls.isin(K).values
     for reg, t in T.groupby("region"):
-        m = np.flatnonzero((G.region.values == reg) & kurg)
-        if not len(m):
+        a = np.flatnonzero((G.region.values == reg) & kall)
+        if not len(a):
             continue
-        d = np.maximum(np.abs(G.x.values[m][:, None] - t.cx.values[None]), np.abs(G.y.values[m][:, None] - t.cy.values[None]))
+        d = np.maximum(np.abs(G.x.values[a][:, None] - t.cx.values[None]), np.abs(G.y.values[a][:, None] - t.cy.values[None]))
         own = (d / np.maximum(t.half.values[None], 1.0)).argmin(1)
-        hit = t.p.values[own] >= g
+        conf = np.bincount(own[G.score.values[a] >= PROTECT_SCORE], minlength=len(t))      # confident kurgans per scene
+        hit = (t.p.values[own] >= g) & (G.score.values[a] < tau) & (conf[own] < nprot)
         if scope == "small":
             hit &= t.small.values[own]
-        drop[m[hit]] = True
+        drop[a[hit]] = True
     return drop
 
 
@@ -74,6 +80,9 @@ def self_test():
     assert list(scene_gate_drop(G, T, 0.3, "all", np.inf)) == [True, True, True, False, False]
     assert list(scene_gate_drop(G, T, 0.01, "all", np.inf)) == [True, True, True, False, True]
     assert not scene_gate_drop(G, T, 0.7, "all", np.inf).any()
+    # protection: scene A-small holds one confident kurgan (0.80 ≥ 0.5) → protected when nprot ≤ 1, not when nprot = 2
+    assert list(scene_gate_drop(G, T, 0.3, "all", np.inf, 1)) == [False, False, True, False, False]
+    assert list(scene_gate_drop(G, T, 0.3, "all", np.inf, 2)) == [True, True, True, False, False]
     Sg = pd.DataFrame({"region": ["A", "A"], "x": [3.0, 5010.0], "y3857": [0.0, 0.0], "p": [0.6, 0.2]})
     geom = {"A": [(0.0, 0.0, 150.0, True), (5000.0, 0.0, 2000.0, False)]}
     T2 = scene_table(Sg, geom)

@@ -104,23 +104,54 @@ class Localiser:
         self.device = device; self.crs_override = crs_override
         self.W = dict(np.load(weights))
 
-    def __call__(self, path, crs=None):
-        """→ (x, y in EPSG:3857, map max). crs: the scene CRS to use when the raster's own CRS is unreliable (the
-        deployment passes the same CRS it uses for the scene gate)."""
+    @staticmethod
+    def _sigmoid(z):
+        return float(1 / (1 + np.exp(-np.clip(float(z), -40, 40))))
+
+    def scene_score(self, tok):
+        """Whole-scene hillfort probability from the same frozen tokens.  The
+        head is optional so older v24 probe files retain identical behaviour."""
+        if "scene_pca_mean" not in self.W:
+            return np.nan
+        x = np.r_[tok.mean(0), tok.std(0)].astype(np.float32)
+        a = (x - self.W["scene_pca_mean"]) @ self.W["scene_pca_comp"].T
+        a = (a - self.W["scene_mu"]) / self.W["scene_sd"]
+        return self._sigmoid(a @ self.W["scene_coef"] + self.W["scene_b"])
+
+    def stack_score(self, deployed_p, map_max, dino_scene_p):
+        """Final all-training meta model corresponding to the geographic OOF
+        stack in experiments/codex/sp_hillfort_gate_stack.py."""
+        if "stack_mu" not in self.W or not np.isfinite(dino_scene_p):
+            return np.nan
+        p, m, s = float(deployed_p), float(map_max), float(dino_scene_p)
+        x = np.array([p, m, s, p*m, p*s, m*s], np.float32)
+        x = (x - self.W["stack_mu"]) / self.W["stack_sd"]
+        return self._sigmoid(x @ self.W["stack_coef"] + self.W["stack_b"])
+
+    def predict(self, path, crs=None):
+        """→ (x, y in EPSG:3857, map max, scene probability)."""
         from pyproj import Transformer
         from scipy.ndimage import gaussian_filter, zoom
         maps = []
+        scene_p = np.nan
         for side in SIDES:
             img, T, raster_crs = read_scene(path, side)
             gh, gw = img.shape[0] // PATCH, img.shape[1] // PATCH
-            maps.append((probe_map(self.W, side, tokens(self.model, img, self.mean, self.std, self.device), gh, gw), T))
+            tok = tokens(self.model, img, self.mean, self.std, self.device)
+            maps.append((probe_map(self.W, side, tok, gh, gw), T))
+            if side == SIDES[-1]:
+                scene_p = self.scene_score(tok)
         img_crs = crs or self.crs_override
         (_, T), (gh, gw) = maps[-1], maps[-1][0].shape
         m = np.mean([zoom(a, (gh / a.shape[0], gw / a.shape[1]), order=1) if a.shape != (gh, gw) else a for a, _ in maps], 0)
         g = gaussian_filter(m, 0.5, mode="nearest"); r, c = np.unravel_index(int(np.argmax(g)), g.shape)
         X, Y = T * ((c + 0.5) * PATCH, (r + 0.5) * PATCH)
         x3, y3 = Transformer.from_crs(img_crs or raster_crs, 3857, always_xy=True).transform(X, Y)
-        return float(x3), float(y3), float(g.max())
+        return float(x3), float(y3), float(g.max()), float(scene_p)
+
+    def __call__(self, path, crs=None):
+        """Backward-compatible v24 API: → (x, y, map max)."""
+        return self.predict(path, crs)[:3]
 
 
 def save_backbone(model_id="facebook/dinov3-vitl16-pretrain-sat493m", out="models/dinov3_sat"):

@@ -11,8 +11,9 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."
 
 
 def main(w=0.5):
-    w = float(w); out = os.path.join(ROOT, f"work/sp_cnn/oof_ens_{w}"); os.makedirs(out, exist_ok=True)
-    for p in sorted(glob.glob(os.path.join(ROOT, "work/sp_cnn/oof_resnet18/*.npz"))):
+    w = float(w); src = os.environ.get("CNN_OOF", "resnet18"); suffix = "" if src == "resnet18" else "_" + src
+    out = os.path.join(ROOT, f"work/sp_cnn/oof_ens_{w}{suffix}"); os.makedirs(out, exist_ok=True)
+    for p in sorted(glob.glob(os.path.join(ROOT, f"work/sp_cnn/oof_{src}/*.npz"))):
         z = dict(np.load(p, allow_pickle=True)); c = z["p"].astype(np.float32)
         d = np.load(os.path.join(ROOT, "work/sp_dense/oof", os.path.basename(p)))["p"][:4].astype(np.float32)
         u = np.stack([zoom(ch, 4, order=1, grid_mode=True, mode="nearest") for ch in d])[:, :c.shape[1], :c.shape[2]]
