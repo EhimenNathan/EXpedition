@@ -6,10 +6,13 @@ the hillfort in 0.691 of the 55 hillfort scenes vs 0.364 for the scene centre (n
 variant 0.60–0.69). Out-of-fold points: experiments/claude/outputs/hf_dinov3_loc_points_oof.csv (one row per scene;
 every row predicted by a probe that never saw that region's 20 km cluster).
 
-Settings for the point emitted by the deployed hillfort gate (p ≥ 0.1):
-  "snap"            deployed: scene centre snapped to the best fused hillfort candidate within 0.2·half (s ≥ 0.02)
-  ("dino", m)       DINOv3 point when the scene's map max ≥ m, else the deployed snap point; m ∈ {0, 0.5, 0.7, 0.9}
-  ("both", m)       deployed point AND the DINOv3 point (if ≥ m and > 0.2·half away from it; confidence p·0.99)
+Settings (point, m, gate score, gate threshold g), chosen on the other folds:
+  point  "snap": deployed scene centre snapped to the best fused hillfort candidate within 0.2·half (s ≥ 0.02);
+         "dino": the DINOv3 point when its map max ≥ m, else the snap point
+  gate   "v21": the deployed scene classifier p; "mean3": mean(p, DINOv3 map max, DINOv3 scene classifier p_scene);
+         "mean2": mean(map max, p_scene) — the gate decides which scenes emit a hillfort (confidence = gate score) and,
+         as deployed, drops detector hillforts in regions with a scene below g
+  ("snap", 0, "v21", 0.1) reproduces deployment.
 chosen on the other folds (koz3.nested); per-fold change; per-region robust acceptance.
   python scripts/sp_hillfort_dinov3_loc_oof.py [--self-test]
 Accept only if nested honest > deployed, no outer fold regresses, k* ≥ 3, bootstrap P(gain>0) ≥ 0.8.
@@ -25,59 +28,73 @@ sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "scripts"))
 NAMES = ("dfine", "rtdetr", "hm", "dfnodn", "balq", "balq3")
 K = ("kurgany_povrezhdennye", "kurgany_tselye")
 POINTS = os.path.join(ROOT, "experiments/claude/outputs/hf_dinov3_loc_points_oof.csv")
-SETTINGS = ["snap"] + [("dino", m) for m in (0.0, 0.5, 0.7, 0.9)] + [("both", m) for m in (0.5, 0.7, 0.9)]
+# (point, min map max for the DINOv3 point, gate score, gate threshold); ("snap", 0, "v21", 0.1) = deployed
+SETTINGS = [("snap", 0.0, "v21", 0.1)] + [(pt, m, gs, g) for pt, m in (("snap", 0.0), ("dino", 0.0), ("dino", 0.7))
+                                          for gs in ("v21", "mean3", "mean2") for g in (0.1, 0.2, 0.3, 0.4)
+                                          if (pt, m, gs, g) != ("snap", 0.0, "v21", 0.1)]
+
+
+BASE = ("snap", 0.0, "v21", 0.1)
+
+
+def gate_score(p, loc_row, src):
+    """Scene hillfort score: v21 scene classifier p, or its mean with the DINOv3 localiser peak and scene classifier."""
+    if src == "v21" or loc_row is None or not np.isfinite(loc_row[3]):
+        return p
+    _, _, mx, ps = loc_row
+    return (p + mx + ps) / 3 if src == "mean3" else (mx + ps) / 2
 
 
 def match_points(Sg, Dp):
-    """Sg row index → (x, y, map_max) of the localiser point of the same region whose scene centre is nearest."""
+    """Sg row index → (x, y, map_max, p_scene) of the localiser point of the same region whose scene centre is nearest
+    (no DataFrame merge: Sg and the point table both carry x / y3857-like columns)."""
     out = {}
+    ps = Dp.p_scene.values if "p_scene" in Dp else np.full(len(Dp), np.nan)
     for r in Sg.itertuples():
-        d = Dp[Dp.region == r.region]
-        if len(d):
-            j = np.argmin(np.hypot(d.cx3857.values - r.x, d.cy3857.values - r.y3857))
-            out[r.Index] = (float(d.x3857.values[j]), float(d.y3857.values[j]), float(d.map_max.values[j]))
+        m = (Dp.region == r.region).values
+        if m.any():
+            d = Dp[m]; j = np.argmin(np.hypot(d.cx3857.values - r.x, d.cy3857.values - r.y3857))
+            out[r.Index] = (float(d.x3857.values[j]), float(d.y3857.values[j]), float(d.map_max.values[j]), float(ps[m][j]))
     return out
 
 
 def hillfort_rows(Sx, GC, half, loc, st):
-    """Hillfort points for gated scenes (Sx: p ≥ 0.1) under setting st."""
+    """Hillfort points for the scenes of Sx under setting st = (point, m, gate score, gate threshold); the scene
+    confidence is its gate score."""
     rows = []
+    pt, m_min, gsrc, g = st
     for r in Sx.itertuples():
+        sc = gate_score(r.p, loc.get(r.Index), gsrc)
+        if sc < g:
+            continue
         cx, cy = r.x, r.y3857
         c = GC[GC.region == r.region]
         c = c[np.hypot(c.x - cx, c.y - cy) <= 0.2 * half[r.Index]]
         if len(c):
             b = c.loc[c.score.idxmax()]; cx, cy = b.x, b.y
-        if st == "snap" or r.Index not in loc:
-            rows.append((r.region, "gorodishcha", r.p, cx, cy)); continue
-        lx, ly, mx = loc[r.Index]
-        mode, m = st
-        if mode == "dino":
-            rows.append((r.region, "gorodishcha", r.p, lx, ly) if mx >= m else (r.region, "gorodishcha", r.p, cx, cy))
-        else:
-            rows.append((r.region, "gorodishcha", r.p, cx, cy))
-            if mx >= m and np.hypot(lx - cx, ly - cy) > 0.2 * half[r.Index]:
-                rows.append((r.region, "gorodishcha", r.p * 0.99, lx, ly))
+        if pt == "snap" or r.Index not in loc:
+            rows.append((r.region, "gorodishcha", sc, cx, cy)); continue
+        lx, ly, mx, _ = loc[r.Index]
+        rows.append((r.region, "gorodishcha", sc, lx, ly) if mx >= m_min else (r.region, "gorodishcha", sc, cx, cy))
     return rows
 
 
 def self_test():
-    Sg = pd.DataFrame({"region": ["A", "A", "B"], "x": [0.0, 5000.0, 0.0], "y3857": [0.0, 0.0, 0.0], "p": [0.6, 0.3, 0.5]})
-    Dp = pd.DataFrame({"region": ["A", "A"], "cx3857": [10.0, 4990.0], "cy3857": [0.0, 0.0],
-                       "x3857": [100.0, 5100.0], "y3857": [50.0, 0.0], "map_max": [0.95, 0.4]})
+    Sg = pd.DataFrame({"region": ["A", "A", "B"], "x": [0.0, 5000.0, 0.0], "y3857": [0.0, 0.0, 0.0], "p": [0.6, 0.3, 0.05]})
+    Dp = pd.DataFrame({"region": ["A", "A"], "cx3857": [10.0, 4990.0], "cy3857": [0.0, 0.0], "x3857": [100.0, 5100.0],
+                       "y3857": [50.0, 0.0], "map_max": [0.95, 0.4], "p_scene": [0.9, 0.1]})
     loc = match_points(Sg, Dp)
-    assert loc == {0: (100.0, 50.0, 0.95), 1: (5100.0, 0.0, 0.4)}, loc
+    assert loc == {0: (100.0, 50.0, 0.95, 0.9), 1: (5100.0, 0.0, 0.4, 0.1)}, loc
     GC = pd.DataFrame({"region": ["A"], "x": [30.0], "y": [0.0], "score": [0.5]})
     half = {0: 500.0, 1: 500.0, 2: 500.0}
-    snap = hillfort_rows(Sg, GC, half, loc, "snap")
-    assert [(r[3], r[4]) for r in snap] == [(30.0, 0.0), (5000.0, 0.0), (0.0, 0.0)]
-    d = hillfort_rows(Sg, GC, half, loc, ("dino", 0.5))
-    assert [(r[3], r[4]) for r in d] == [(100.0, 50.0), (5000.0, 0.0), (0.0, 0.0)]     # low map max / no point → snap
-    b = hillfort_rows(Sg, GC, half, loc, ("both", 0.5))
-    assert len(b) == 3 and b[0][3] == 30.0                                              # 86 m away < 0.2·500 → no 2nd point
-    b2 = hillfort_rows(Sg, GC, {0: 100.0, 1: 500.0, 2: 500.0}, loc, ("both", 0.5))
-    assert len(b2) == 4 and b2[1][3:] == (100.0, 50.0) and abs(b2[1][2] - 0.594) < 1e-9
-    print("self-test PASS: scene matching, dino / snap fallback, second point spacing and confidence")
+    snap = hillfort_rows(Sg, GC, half, loc, BASE)                     # deployed: p ≥ 0.1, snapped centre, confidence p
+    assert [(r[2], r[3], r[4]) for r in snap] == [(0.6, 30.0, 0.0), (0.3, 5000.0, 0.0)], snap
+    d = hillfort_rows(Sg, GC, half, loc, ("dino", 0.7, "v21", 0.1))   # scene 1: map max 0.4 < 0.7 → snap fallback
+    assert [(r[3], r[4]) for r in d] == [(100.0, 50.0), (5000.0, 0.0)], d
+    m3 = hillfort_rows(Sg, GC, half, loc, ("dino", 0.0, "mean3", 0.3))  # scores (0.6+0.95+0.9)/3, (0.3+0.4+0.1)/3 = 0.267 < 0.3
+    assert len(m3) == 1 and abs(m3[0][2] - 2.45 / 3) < 1e-9 and m3[0][3:] == (100.0, 50.0), m3
+    assert abs(gate_score(0.3, loc[1], "mean2") - 0.25) < 1e-9 and gate_score(0.05, None, "mean3") == 0.05
+    print("self-test PASS: scene matching without merge, gate scores, thresholds, dino / snap fallback")
 
 
 def main():
@@ -115,9 +132,10 @@ def main():
             ex = [(r.region, K[1] if r.cls == K[0] else K[0], r.score * 0.99, r.x, r.y) for r in F[F.cls.isin(K)].itertuples()
                   if (r.s_kt if r.cls == K[0] else r.s_kp) >= 0.4]
             G = pd.concat([F[["region", "cls", "score", "x", "y"]], pd.DataFrame(ex, columns=["region", "cls", "score", "x", "y"])], ignore_index=True)
-            Sx = Sg[Sg.region.isin(regs)]
-            base_cache[key] = (G[~((G.cls == "gorodishcha") & G.region.isin(set(Sx[Sx.p < 0.1].region)))], Sx[Sx.p >= 0.1])
+            base_cache[key] = (G, Sg[Sg.region.isin(regs)])
         G, Sx = base_cache[key]
+        sc = np.array([gate_score(r.p, loc.get(r.Index), st[2]) for r in Sx.itertuples()])
+        G = G[~((G.cls == "gorodishcha") & G.region.isin(set(Sx.region[sc < st[3]])))]       # as deployed, with this gate
         return pd.concat([G, pd.DataFrame(hillfort_rows(Sx, GC, half, loc, st), columns=["region", "cls", "score", "x", "y"])], ignore_index=True)
 
     folds = sorted({RF[r] for r in regions})
@@ -127,13 +145,13 @@ def main():
         tot = _add_all(C[st].values()); h = tot.get("gorodishcha", (0, 0, 0))
         print(f"{str(st):14s} pooled {weighted(tot):.4f}  hillfort (tp, fp, fn) {tuple(int(v) for v in h)}  folds "
               + " ".join(f"{weighted(C[st][f]):.4f}" for f in folds), flush=True)
-    h, ch, o, os_, _ = nested(C); base = weighted(_add_all(C["snap"].values()))
+    h, ch, o, os_, _ = nested(C); base = weighted(_add_all(C[BASE].values()))
     print(f"deployed (snap) {base:.4f} | nested honest {h:.4f} ({h - base:+.4f}) | best fixed {o:.4f} @ {os_} | chosen {ch}")
-    print(f"worst outer-fold change {min(weighted(C[ch[f]][f]) - weighted(C['snap'][f]) for f in folds):+.4f}")
+    print(f"worst outer-fold change {min(weighted(C[ch[f]][f]) - weighted(C[BASE][f]) for f in folds):+.4f}")
     st = max(set(ch.values()), key=list(ch.values()).count)
     gtr = {r: to_gt_geojson(L[L.region == r]) for r in regions}
-    CS = site_counts(lambda s, r: fc(pipeline(s, [r])), ("snap", st), regions, gtr)
-    report(f"DINOv3 hillfort localiser {st}", CS["snap"], CS[st])
+    CS = site_counts(lambda s, r: fc(pipeline(s, [r])), (BASE, st), regions, gtr)
+    report(f"DINOv3 hillfort localiser {st}", CS[BASE], CS[st])
 
 
 if __name__ == "__main__":
