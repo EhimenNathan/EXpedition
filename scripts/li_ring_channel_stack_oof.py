@@ -30,8 +30,9 @@ SCOPES = {
     "heat_masks": (0, 3, 4),
     "all": tuple(range(7)),
 }
-WEIGHTS = (0.0, 0.25, 0.5, 1.0, 2.0)
+WEIGHTS = (0.0, 0.5, 1.0, 2.0)
 THRESHOLDS = (0.12, 0.15, 0.18)
+GATE_FRACTIONS = (0.25, 0.5, 0.75, 1.0)
 
 
 def main(candidate="work/li/oof_augxr.pkl"):
@@ -52,10 +53,24 @@ def main(candidate="work/li/oof_augxr.pkl"):
     prior = {"R": 200.0, "K": 3, "snb": 0.2}
     cache = {}
 
+    # Label-free site statistic: mean of the strongest 0.1% positive changes in
+    # kurgan heat.  A ring specialist should diverge most on ring-like terrain.
+    # Convert it to a global rank so the gate is invariant to score calibration.
+    divergence = {}
+    for region in sites:
+        delta = ring[region][0].astype(np.float32) - base[region][0].astype(np.float32)
+        valid_delta = delta[items[region]["valid"].astype(bool)]
+        k = max(1, int(np.ceil(valid_delta.size * 0.001)))
+        divergence[region] = float(np.partition(valid_delta, -k)[-k:].mean())
+    ordered = sorted(sites, key=lambda r: divergence[r])
+    rank = {r: (i + 1) / len(ordered) for i, r in enumerate(ordered)}
+    print("ring divergence quantiles", np.quantile(list(divergence.values()), [0, .25, .5, .75, 1]).round(5), flush=True)
+
     def probability(setting, region):
-        scope, weight, _ = setting
+        scope, weight, _, gate_fraction = setting
         out = base[region].astype(np.float32).copy()
-        if weight:
+        active = rank[region] > 1.0 - gate_fraction
+        if weight and active:
             idx = SCOPES[scope]
             out[list(idx)] = (
                 3.0 * out[list(idx)] + weight * ring[region].astype(np.float32)[list(idx)]
@@ -65,7 +80,7 @@ def main(candidate="work/li/oof_augxr.pkl"):
     def decode(setting, region):
         key = (setting, region)
         if key not in cache:
-            _, _, threshold = setting
+            _, _, threshold, _ = setting
             it = items[region]
             cache[key] = decode_site_v2(
                 probability(setting, region),
@@ -78,8 +93,14 @@ def main(candidate="work/li/oof_augxr.pkl"):
             )
         return cache[key]
 
-    settings = [(scope, w, t) for scope in SCOPES for w in WEIGHTS for t in THRESHOLDS]
-    deployed = ("heat", 0.0, 0.15)
+    deployed = ("heat", 0.0, 0.15, 1.0)
+    settings = [deployed] + [
+        (scope, w, t, gate_fraction)
+        for scope in SCOPES
+        for w in WEIGHTS if w > 0
+        for t in THRESHOLDS
+        for gate_fraction in GATE_FRACTIONS
+    ]
     gt = {
         f: to_gt_geojson(lab[lab.region.isin([r for r in sites if fold[r] == f])])
         for f in folds
