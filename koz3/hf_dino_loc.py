@@ -61,14 +61,25 @@ def probe_map(W, side, tok, gh, gw):
     return np.mean(out, 0).reshape(gh, gw)
 
 
+def norm_stats(backbone, tok=None):
+    """image_mean / image_std from the backbone's preprocessor_config.json (local folder or Hugging Face id) — read as
+    plain JSON so the platform image (no PIL, no torchvision) never imports a transformers image processor."""
+    import json
+    f = os.path.join(backbone, "preprocessor_config.json")
+    if not os.path.isfile(f):
+        from huggingface_hub import hf_hub_download
+        f = hf_hub_download(backbone, "preprocessor_config.json", token=tok)
+    c = json.load(open(f))
+    return np.array(c["image_mean"], np.float32), np.array(c["image_std"], np.float32)
+
+
 class Localiser:
     def __init__(self, backbone, weights, device="cpu", crs_override=None):
         """backbone: a local folder saved with save_backbone() (offline, fp16) or a Hugging Face id."""
         import torch
-        from transformers import AutoModel, AutoImageProcessor
+        from transformers import AutoModel
         tok = os.environ.get("HF_TOKEN")
-        proc = AutoImageProcessor.from_pretrained(backbone, token=tok)
-        self.mean = np.array(proc.image_mean, np.float32); self.std = np.array(proc.image_std, np.float32)
+        self.mean, self.std = norm_stats(backbone, tok)  # no AutoImageProcessor: it needs PIL / torchvision, absent on the platform
         q8 = sorted(__import__("glob").glob(os.path.join(backbone, "*.q8.safetensors"))) if os.path.isdir(backbone) else []
         if q8:                                          # int8-packed weights (make_v23_from_v22.py --int8): dequantise into a
             import shutil, tempfile                     # temporary standard checkpoint so from_pretrained applies its usual

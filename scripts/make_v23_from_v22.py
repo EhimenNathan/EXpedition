@@ -103,7 +103,24 @@ def parity(inf_dir, n):
     return out
 
 
+def parity_only(inf_dir, n):
+    """Child process: block PIL / torchvision (absent from the platform image) and put the archive's vendored packages
+    first on the path (as inference/main.py does), then run the parity check and print its rows as JSON."""
+    for m in ("PIL", "torchvision"):
+        sys.modules[m] = None
+    vend = os.path.join(inf_dir, "vendor")
+    if os.path.isdir(vend):
+        sys.path.insert(0, vend)
+    P = parity(inf_dir, n)
+    import transformers
+    print("transformers", transformers.__version__, "from", os.path.dirname(transformers.__file__))
+    print("PARITY_JSON", json.dumps(P))
+
+
 def main():
+    if "--parity-only" in sys.argv:
+        i = sys.argv.index("--parity-only"); n = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else 8
+        return parity_only(sys.argv[i + 1], n)
     ap = argparse.ArgumentParser()
     ap.add_argument("v22"); ap.add_argument("v23"); ap.add_argument("--int8", action="store_true"); ap.add_argument("--n", type=int, default=8)
     a = ap.parse_args()
@@ -123,8 +140,14 @@ def main():
     cp = os.path.join(inf, "models", "config.json"); c = json.load(open(cp, encoding="utf-8"))
     c.setdefault("sp_or", {})["dino_loc"] = {"dir": "sp_dino_loc"}
     json.dump(c, open(cp, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print("parity on training scenes (packed module vs out-of-fold token path, same final probe):")
-    P = parity(inf, a.n)
+    print("parity on training scenes in a PLATFORM-LIKE subprocess (no PIL / torchvision, the archive's vendor first):")
+    import subprocess
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), "--parity-only", inf, "--n", str(a.n)], capture_output=True, text=True,
+                       env={**os.environ, "HF_HUB_OFFLINE": "1"})
+    print("\n".join(l for l in (r.stdout + r.stderr).splitlines() if "warn" not in l.lower() and "loading" not in l.lower())[-3000:])
+    if r.returncode != 0 or "PARITY_JSON" not in r.stdout:
+        print("PARITY FAILED: the packed localiser does not run in a platform-like environment — do not submit"); sys.exit(1)
+    P = json.loads(r.stdout.split("PARITY_JSON")[-1].strip())
     moved = sum(p[1] > 1.0 for p in P)
     print(f"scenes whose point moved > 1 m: {moved}/{len(P)}, worst map-max Δ {max(p[2] for p in P):.4f}, "
           f"mean {np.mean([p[3] for p in P]):.1f}s/scene")
