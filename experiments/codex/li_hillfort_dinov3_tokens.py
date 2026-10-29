@@ -72,7 +72,7 @@ def main(out="work/hf_dinov3/li_tokens512.npz"):
             z = torch.from_numpy(((z - mean) / std).transpose(2, 0, 1).copy())[None].to(device)
             amp_dtype = torch.float16 if device == "cuda" else torch.bfloat16
             with torch.inference_mode(), torch.autocast(device, dtype=amp_dtype):
-                q = model(pixel_values=z).last_hidden_state[0, skip:].float().numpy().reshape(h // PATCH, w // PATCH, -1)
+                q = model(pixel_values=z).last_hidden_state[0, skip:].float().cpu().numpy().reshape(h // PATCH, w // PATCH, -1)
             views.append(q[:, ::-1] if flip else q)
         tok = np.mean(views, 0).reshape(-1, views[0].shape[-1])
         gh, gw = h // PATCH, w // PATCH
