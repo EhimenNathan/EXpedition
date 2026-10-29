@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from shapely.strtree import STRtree
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path[:0] = [ROOT, os.path.join(ROOT, "scripts")]
 from koz3.score import CALC
 from koz3.labels import to_gt_geojson

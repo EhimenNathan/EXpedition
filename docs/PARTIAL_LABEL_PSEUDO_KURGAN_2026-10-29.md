@@ -26,3 +26,11 @@ Rejected on the held-out fold.
 Site changes were 7 improved, 7 regressed and 23 unchanged; bootstrap P(gain > 0) = 0.12. The largest regressions were concentrated in the Kurgany satellite series. Training only on kurgan-annotated regions also failed separately, so neither exclusion nor high-confidence pseudo labels solved the partial-label problem.
 
 Do not extend this pilot to the remaining folds.
+
+## Class-specific negative-loss masking
+
+A second prospective fold-0 pilot retained every scene and every annotation, but set the unmatched-query VFL loss to zero for the two kurgan channels in regions without any kurgan annotation. Other class losses, positive kurgan losses, box losses, training recipe and deployed geographic fold were unchanged.
+
+At the fixed deployed fusion threshold 0.25, replacing `dfnodn` with the masked-loss member changed 0.3580 to 0.3552 (-0.0029). Sites improved/regressed/held: 8/9/20; bootstrap P(gain > 0) = 0.28 with 90% CI crossing zero. A threshold selected on the same single fold showed +0.0021 at 0.18, which is not an honest selection and does not justify more folds.
+
+This variant is also rejected.
